@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Paybazzar</string>
+    <string name="title_activity_main">Paybazzar</string>
+    <string name="package_name">com.ani.paybazzar</string>
+    <string name="custom_url_scheme">com.ani.paybazzar</string>
+</resources>

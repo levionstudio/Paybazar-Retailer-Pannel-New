@@ -1,0 +1,653 @@
+import { useState, useEffect } from "react";
+import axios from "axios";
+import { jwtDecode } from "jwt-decode";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Building2, Copy, CheckCircle2, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
+import { AppSidebar } from "@/components/layout/AppSidebar";
+import { Header } from "@/components/layout/Header";
+
+/* -------------------- INTERFACES -------------------- */
+
+interface DecodedToken {
+  admin_id: string;
+  user_id: string;
+  user_name: string;
+  user_role: string;
+  exp: number;
+  iat: number;
+}
+
+/* -------------------- COMPONENT -------------------- */
+
+const RequestFunds = () => {
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  const [formData, setFormData] = useState({
+    bank_name: "",
+    utr_number: "",
+    amount: "",
+    request_date: "",
+    remarks: "",
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [tokenData, setTokenData] = useState<DecodedToken | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Bank details for fund transfer
+  const companyBankDetails = [
+    {
+      bankName: "AXIS BANK",
+      accountHolder: "PAYBAZAAR TECHNOLOGIES PRIVATE LIMITED",
+      accountNumber: "925020043148912",
+      ifscCode: "UTIB0000056",
+    },
+    {
+      bankName: "IDFC FIRST Bank",
+      accountHolder: "PAYBAZAAR TECHNOLOGIES PRIVATE LIMITED",
+      accountNumber: "10248252306",
+      ifscCode: "IDFB0020137",
+    },
+  ];
+
+  /* -------------------- COPY TO CLIPBOARD -------------------- */
+
+  const copyToClipboard = (text: string, field: string, bankIndex: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(`${field}-${bankIndex}`);
+    toast({
+      title: "Copied!",
+      description: `${field} copied to clipboard`,
+    });
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  /* -------------------- TOKEN VALIDATION -------------------- */
+
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem("authToken");
+
+      if (!token) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to access this page.",
+          variant: "destructive",
+        });
+        navigate("/login");
+        return;
+      }
+
+      try {
+        const decoded = jwtDecode<DecodedToken>(token);
+
+        // Check if token is expired
+        if (decoded.exp * 1000 < Date.now()) {
+          localStorage.removeItem("authToken");
+          toast({
+            title: "Session Expired",
+            description: "Your session has expired. Please log in again.",
+            variant: "destructive",
+          });
+          navigate("/login");
+          return;
+        }
+
+        // Check if user role is retailer
+        if (decoded.user_role !== "retailer") {
+          localStorage.removeItem("authToken");
+          toast({
+            title: "Access Denied",
+            description: "You don't have permission to access this page.",
+            variant: "destructive",
+          });
+          navigate("/login");
+          return;
+        }
+
+        // Verify admin_id exists
+        if (!decoded.admin_id) {
+          toast({
+            title: "Configuration Error",
+            description: "Admin ID not found in token. Please contact support.",
+            variant: "destructive",
+          });
+          navigate("/login");
+          return;
+        }
+
+        setTokenData(decoded);
+      } catch (err) {
+        console.error("Token decode error:", err);
+        localStorage.removeItem("authToken");
+        toast({
+          title: "Authentication Error",
+          description: "Invalid session. Please log in again.",
+          variant: "destructive",
+        });
+        navigate("/login");
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+
+    checkAuth();
+  }, [toast, navigate]);
+
+  /* -------------------- FORM HANDLERS -------------------- */
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { id, value } = e.target;
+    setFormData((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.bank_name) {
+      errors.bank_name = "Please select a bank";
+    }
+    if (!formData.request_date) {
+      errors.request_date = "Request date is required";
+    }
+    if (!formData.utr_number || formData.utr_number.trim() === "") {
+      errors.utr_number = "UTR number is required";
+    }
+    if (!formData.amount) {
+      errors.amount = "Amount is required";
+    } else if (parseFloat(formData.amount) <= 0) {
+      errors.amount = "Amount must be greater than 0";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      const firstError = Object.values(errors)[0];
+      toast({
+        title: "Validation Error",
+        description: firstError,
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  /* -------------------- FORM SUBMISSION -------------------- */
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!tokenData) {
+      toast({
+        title: "Authentication Error",
+        description: "User session not found. Please log in again.",
+        variant: "destructive",
+      });
+      navigate("/login");
+      return;
+    }
+
+    // Validate form before submission
+    if (!validateForm()) {
+      return;
+    }
+
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to submit the request.",
+        variant: "destructive",
+      });
+      navigate("/login");
+      return;
+    }
+
+    // Verify token data has required fields
+    if (!tokenData.user_id || !tokenData.admin_id) {
+      toast({
+        title: "Configuration Error",
+        description:
+          "Required user information is missing. Please log in again.",
+        variant: "destructive",
+      });
+      navigate("/login");
+      return;
+    }
+
+    // Build payload according to backend model
+    // If remarks is empty, use default message
+    const payload = {
+      requester_id: tokenData.user_id,
+      request_to_id: tokenData.admin_id,
+      amount: parseFloat(formData.amount),
+      bank_name: formData.bank_name,
+      request_date: formData.request_date,
+      utr_number: formData.utr_number.trim(),
+      remarks: formData.remarks.trim() || "Admin, please approve",
+    };
+
+    try {
+      setLoading(true);
+      toast({
+        title: "Submitting Request",
+        description: "Please wait while we process your fund request...",
+      });
+
+      const { data } = await axios.post(
+        "https://paybazaar-new.onrender.com/fund_request/create",
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (data.status === "success") {
+        toast({
+          title: "Success",
+          description:
+            data.message ||
+            "Fund request submitted successfully. We will process it shortly.",
+        });
+
+        // Reset form
+        setFormData({
+          bank_name: "",
+          utr_number: "",
+          amount: "",
+          request_date: "",
+          remarks: "",
+        });
+
+        setTimeout(() => {
+          navigate("/dashboard");
+        }, 1500);
+      } else {
+        toast({
+          title: "Request Failed",
+          description:
+            data.message || "Failed to submit fund request. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      console.error("Fund request error:", err);
+
+      let errorMessage = "Something went wrong. Please try again.";
+
+      if (err.response) {
+        if (err.response.status === 400) {
+          errorMessage =
+            err.response.data?.message ||
+            err.response.data?.error ||
+            "Invalid request data. Please check all fields.";
+        } else if (err.response.status === 401) {
+          errorMessage = "Session expired. Please log in again.";
+          setTimeout(() => navigate("/login"), 2000);
+        } else if (err.response.status === 403) {
+          errorMessage = "You don't have permission to perform this action.";
+        } else if (err.response.status === 500) {
+          errorMessage = "Server error. Please try again later.";
+        } else {
+          errorMessage = err.response.data?.message || errorMessage;
+        }
+      } else if (err.request) {
+        errorMessage = "Network error. Please check your internet connection.";
+      }
+
+      toast({
+        title: "Request Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* -------------------- LOADING STATE -------------------- */
+
+  if (isCheckingAuth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">
+            Checking authentication...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /* -------------------- RENDER -------------------- */
+
+  return (
+    <div className="flex min-h-screen w-full bg-background">
+      <AppSidebar />
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header />
+        <div className="flex-1 overflow-y-auto">
+          <main className="p-6 flex flex-col items-center">
+            {/* Bank Details Section */}
+            <div className="flex flex-col max-w-3xl w-full mb-6">
+              <Card className="shadow-lg border-2 border-primary/20 rounded-xl overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Building2 className="h-5 w-5 text-primary" />
+                    Transfer Funds to Paybazaar Account
+                  </CardTitle>
+                  <CardDescription>
+                    Please transfer the amount to one of the following bank
+                    accounts
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {companyBankDetails.map((bank, index) => (
+                      <div
+                        key={index}
+                        className="border border-border rounded-lg p-4 bg-muted/30 hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 mb-3">
+                          <Building2 className="h-4 w-4 text-primary" />
+                          <h3 className="font-semibold text-foreground">
+                            {bank.bankName}
+                          </h3>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div>
+                            <p className="text-muted-foreground text-xs mb-1">
+                              Account Holder
+                            </p>
+                            <p className="font-medium text-foreground">
+                              {bank.accountHolder}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-xs mb-1">
+                              Account Number
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-mono font-medium text-foreground">
+                                {bank.accountNumber}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copyToClipboard(
+                                    bank.accountNumber,
+                                    "Account Number",
+                                    index
+                                  )
+                                }
+                                className="p-1 hover:bg-muted rounded transition-colors"
+                                title="Copy Account Number"
+                              >
+                                {copiedField === `Account Number-${index}` ? (
+                                  <CheckCircle2 className="h-3 w-3 text-green-600" />
+                                ) : (
+                                  <Copy className="h-3 w-3 text-muted-foreground" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-xs mb-1">
+                              IFSC Code
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-mono font-medium text-foreground">
+                                {bank.ifscCode}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copyToClipboard(
+                                    bank.ifscCode,
+                                    "IFSC Code",
+                                    index
+                                  )
+                                }
+                                className="p-1 hover:bg-muted rounded transition-colors"
+                                title="Copy IFSC Code"
+                              >
+                                {copiedField === `IFSC Code-${index}` ? (
+                                  <CheckCircle2 className="h-3 w-3 text-green-600" />
+                                ) : (
+                                  <Copy className="h-3 w-3 text-muted-foreground" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <p className="text-sm text-blue-900 dark:text-blue-100">
+                      <strong>Note:</strong> After transferring funds, please
+                      fill the form below with your transaction details (UTR
+                      number, amount, etc.) to complete the fund request.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Fund Request Form */}
+            <div className="flex flex-col max-w-3xl w-full">
+              <Card className="shadow-lg border border-border rounded-xl overflow-hidden">
+                <CardHeader className="paybazaar-gradient text-white rounded-t-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-1 bg-white/30 rounded-full"></div>
+                    <div>
+                      <CardTitle className="text-2xl font-bold">
+                        Request E-Value
+                      </CardTitle>
+                      <CardDescription className="text-white/90 mt-1">
+                        Submit your fund request with transaction details
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-8 bg-gradient-to-br from-background to-muted/30">
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Bank Name Dropdown */}
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="bank_name"
+                          className="text-sm font-semibold text-foreground flex items-center gap-1"
+                        >
+                          Bank Name <span className="text-destructive">*</span>
+                        </Label>
+                        <Select
+                          value={formData.bank_name}
+                          onValueChange={(value) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              bank_name: value,
+                            }))
+                          }
+                          required
+                        >
+                          <SelectTrigger className="h-12 border-2 border-border focus:border-primary transition-colors bg-background">
+                            <SelectValue placeholder="Select Bank" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="State Bank of India">
+                              State Bank of India
+                            </SelectItem>
+                            <SelectItem value="HDFC">HDFC</SelectItem>
+                            <SelectItem value="AU Bank">AU Bank</SelectItem>
+                            <SelectItem value="Ujjivan Bank">
+                              Ujjivan Bank
+                            </SelectItem>
+                            <SelectItem value="IDFC">IDFC</SelectItem>
+                            <SelectItem value="Kotak">Kotak</SelectItem>
+                            <SelectItem value="Indusland Bank">
+                              Indusland Bank
+                            </SelectItem>
+                            <SelectItem value="RBL">RBL</SelectItem>
+                            <SelectItem value="Axis Bank">Axis Bank</SelectItem>
+                            <SelectItem value="ICICI">ICICI</SelectItem>
+                            <SelectItem value="Advance Credit">
+                              Advance Credit
+                            </SelectItem>
+                            <SelectItem value="Yes Bank">Yes Bank</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Request Date */}
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="request_date"
+                          className="text-sm font-semibold text-foreground flex items-center gap-1"
+                        >
+                          Request Date{" "}
+                          <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          id="request_date"
+                          type="date"
+                          value={formData.request_date}
+                          onChange={handleChange}
+                          max={new Date().toISOString().split("T")[0]}
+                          className="h-12 border-2 border-border focus:border-primary transition-colors bg-background"
+                          required
+                        />
+                      </div>
+
+                      {/* UTR Number */}
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="utr_number"
+                          className="text-sm font-semibold text-foreground flex items-center gap-1"
+                        >
+                          UTR Number <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          id="utr_number"
+                          type="text"
+                          value={formData.utr_number}
+                          onChange={handleChange}
+                          className="h-12 border-2 border-border focus:border-primary transition-colors bg-background"
+                          placeholder="Enter UTR Number"
+                          required
+                        />
+                      </div>
+
+                      {/* Amount */}
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="amount"
+                          className="text-sm font-semibold text-foreground flex items-center gap-1"
+                        >
+                          Amount <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          id="amount"
+                          type="number"
+                          value={formData.amount}
+                          onChange={handleChange}
+                          className="h-12 border-2 border-border focus:border-primary transition-colors bg-background"
+                          placeholder="Enter Amount"
+                          min="1"
+                          step="0.01"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Remarks - Optional */}
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="remarks"
+                        className="text-sm font-semibold text-foreground flex items-center gap-1"
+                      >
+                        Remarks{" "}
+                        <span className="text-muted-foreground text-xs font-normal">
+                          (Optional)
+                        </span>
+                      </Label>
+                      <Textarea
+                        id="remarks"
+                        value={formData.remarks}
+                        onChange={handleChange}
+                        className="min-h-[100px] border-2 border-border focus:border-primary transition-colors bg-background resize-none"
+                        placeholder="Enter any additional notes or remarks (optional)"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        If left empty, the default message "Admin, please
+                        approve" will be sent
+                      </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-4 pt-6">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="flex-1 h-12 border-2 hover:bg-muted"
+                        disabled={loading}
+                        onClick={() => navigate("/dashboard")}
+                      >
+                        Cancel
+                      </Button>
+
+                      <Button
+                        type="submit"
+                        className="flex-1 h-12 paybazaar-gradient text-white hover:opacity-90 shadow-lg font-semibold"
+                        disabled={loading}
+                      >
+                        {loading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Submitting...
+                          </>
+                        ) : (
+                          "Submit Request"
+                        )}
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default RequestFunds;
