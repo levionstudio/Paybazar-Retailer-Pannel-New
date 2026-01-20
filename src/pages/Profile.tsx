@@ -41,29 +41,30 @@ interface DecodedToken {
 }
 
 interface RetailerProfile {
-  AdminID: string;
-  RetailerID: string;
-  DistributorID: string;
-  Name: string;
-  Phone: string;
-  Email: string;
-  AadharNumber: string;
-  PanNumber: string;
-  DateOfBirth: string;
-  Gender: string;
-  City: string;
-  State: string;
-  Address: string;
-  Pincode: string;
-  BusinessName: string;
-  BusinessType: string;
-  GSTNumber: string;
-  KYCStatus: boolean;
-  WalletBalance: number;
-  IsBlocked: boolean;
-  CreatedAt: string;
-  UpdatedAt: string;
+  retailer_id: string;
+  distributor_id: string;
+  retailer_name: string;
+  retailer_phone: string;
+  retailer_email: string;
+  aadhar_number: string;
+  pan_number: string;
+  date_of_birth: string;
+  gender: string;
+  city: string;
+  state: string;
+  address: string;
+  pincode: string;
+  business_name: string;
+  business_type: string;
+  gst_number: string;
+  kyc_status: boolean;
+  documents_url: string | null;
+  wallet_balance: number;
+  is_blocked: boolean;
+  created_at: string;
+  updated_at: string;
 }
+
 
 interface UserInfo {
   name: string;
@@ -210,7 +211,7 @@ export default function Profile() {
 
         // Fetch retailer data
         const response = await axios.get(
-          `https://paybazaar-new.onrender.com/retailer/get/retailer/${decoded.user_id}`,
+          `http://localhost:8080/retailer/get/retailer/${decoded.user_id}`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -223,29 +224,36 @@ export default function Profile() {
           const retailerData: RetailerProfile = response.data.data.retailer;
 
           // Map API data to display format
-          setUserInfo({
-            name: retailerData.Name || "",
-            userId: retailerData.RetailerID || "",
-            kycStatus: retailerData.KYCStatus ? "VERIFIED" : "NOT VERIFIED",
-            avatar: "/lovable-uploads/c0876286-fbc5-4e25-b7e8-cb81e868b3fe.png",
-            businessName: retailerData.BusinessName || "",
-            businessType: retailerData.BusinessType || "",
-            gstNumber: retailerData.GSTNumber || "Not Provided",
-            mobileNo: retailerData.Phone || "",
-            email: retailerData.Email || "",
-            dateOfBirth: formatDateForDisplay(retailerData.DateOfBirth || ""),
-            gender: retailerData.Gender || "",
-            aadhaarNumber: retailerData.AadharNumber || "",
-            panNumber: retailerData.PanNumber || "",
-            city: retailerData.City || "",
-            state: retailerData.State || "",
-            pinCode: retailerData.Pincode || "",
-            address: retailerData.Address || "",
-            walletBalance: retailerData.WalletBalance || 0,
-            isBlocked: retailerData.IsBlocked || false,
-            adminId: retailerData.AdminID || "",
-            distributorId: retailerData.DistributorID || "",
-          });
+         setUserInfo({
+  name: retailerData.retailer_name,
+  userId: retailerData.retailer_id,
+  kycStatus: retailerData.kyc_status ? "VERIFIED" : "NOT VERIFIED",
+  avatar: "/lovable-uploads/c0876286-fbc5-4e25-b7e8-cb81e868b3fe.png",
+
+  businessName: retailerData.business_name,
+  businessType: retailerData.business_type,
+  gstNumber: retailerData.gst_number || "Not Provided",
+
+  mobileNo: retailerData.retailer_phone,
+  email: retailerData.retailer_email,
+
+  dateOfBirth: formatDateForDisplay(retailerData.date_of_birth),
+  gender: retailerData.gender,
+
+  aadhaarNumber: retailerData.aadhar_number,
+  panNumber: retailerData.pan_number,
+
+  city: retailerData.city,
+  state: retailerData.state,
+  pinCode: retailerData.pincode,
+  address: retailerData.address,
+
+  walletBalance: retailerData.wallet_balance,
+  isBlocked: retailerData.is_blocked,
+
+  adminId: "", // not sent by API
+  distributorId: retailerData.distributor_id,
+});
 
           // Note: KYC documents URLs would need to be added to the API response
           // For now, keeping the default state
@@ -464,14 +472,14 @@ export default function Profile() {
                         </div>
 
                         <div className="flex items-center gap-4">
-                          <Button
+                          {/* <Button
                             variant="secondary"
                             onClick={() => navigate("/profile/update")}
                             className="bg-white/10 hover:bg-white/20 text-white border-white/20"
                           >
                             <Edit className="h-4 w-4 mr-2" />
                             Update Profile
-                          </Button>
+                          </Button> */}
                           <div className="bg-white/10 px-4 py-2 rounded-lg">
                             <p className="text-white/70 text-xs">Wallet Balance</p>
                             <p className="text-white font-bold text-lg">
@@ -688,14 +696,14 @@ export default function Profile() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Button
+                      {/* <Button
                         variant="outline"
                         className="justify-start"
                         onClick={() => navigate("/profile/update")}
                       >
                         <Edit className="h-4 w-4 mr-2" />
                         Edit Profile
-                      </Button>
+                      </Button> */}
                       <Button 
                         variant="outline" 
                         className="justify-start"
@@ -704,10 +712,10 @@ export default function Profile() {
                         <Upload className="h-4 w-4 mr-2" />
                         Upload Documents
                       </Button>
-                      <Button variant="outline" className="justify-start">
+                      {/* <Button variant="outline" className="justify-start">
                         <CreditCard className="h-4 w-4 mr-2" />
                         View KYC Status
-                      </Button>
+                      </Button> */}
                     </div>
                   </CardContent>
                 </Card>

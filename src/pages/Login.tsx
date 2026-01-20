@@ -33,10 +33,9 @@ import {
 } from "lucide-react";
 
 const loginSchema = z.object({
-  retailer_phone_number: z
-    .string()
-    .regex(/^(\+91|0)?[6-9]\d{9}$/, "Invalid phone number")
-    .min(10, "Phone number must be at least 10 digits"),
+  retailer_id: z
+    .string() 
+    .min(6, "Retailer ID must be at least 6 characters"),
   retailer_password: z
     .string()
     .min(6, "Password must be at least 6 characters"),
@@ -58,7 +57,7 @@ export default function Login() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      retailer_phone_number: "",
+      retailer_id: "",
       retailer_password: "",
     },
   });
@@ -67,9 +66,9 @@ export default function Login() {
     setIsLoading(true);
     try {
       const response = await axios.post(
-        "https://paybazaar-new.onrender.com/retailer/login",
+        "http://localhost:8080/retailer/login",
         {
-          retailer_phone_number: data.retailer_phone_number,
+          retailer_id: data.retailer_id,
           retailer_password: data.retailer_password,
         }
       );
@@ -186,22 +185,22 @@ export default function Login() {
                 {/* Phone Number */}
                 <div className="space-y-3">
                   <Label
-                    htmlFor="phone"
+                    htmlFor="retailer_id"
                     className="text-md font-semibold text-slate-800"
                   >
-                    Phone Number
+                   Retailer ID
                   </Label>
                   <Input
-                    id="phone"
+                    id="retailer_id"
                     type="tel"
-                    placeholder="Enter your phone number"
-                    {...register("retailer_phone_number")}
+                    placeholder="Enter your retailer ID"
+                    {...register("retailer_id")}
                     className="h-14 bg-slate-50 border border-slate-300 rounded-xl focus:border-[#0d3154] focus:ring-[#0d3154]/50 text-lg"
                     disabled={isLoading}
                   />
-                  {errors.retailer_phone_number && (
+                  {errors.retailer_id && (
                     <p className="text-sm text-destructive">
-                      {errors.retailer_phone_number.message}
+                      {errors.retailer_id.message}
                     </p>
                   )}
                 </div>

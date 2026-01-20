@@ -10,9 +10,22 @@ import { Eye, EyeOff, Shield } from "lucide-react";
 import axios from "axios";
 import { jwtDecode, JwtPayload } from "jwt-decode";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+// Get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("authToken");
+  return {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  };
+};
+
 const ChangePasswordMpin = () => {
   const { toast } = useToast();
-  const [id, setId] = useState("");
+  const [retailerId, setRetailerId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   // MPIN form state
@@ -27,20 +40,52 @@ const ChangePasswordMpin = () => {
 
   useEffect(() => {
     const token = localStorage.getItem("authToken");
-    if (!token) return;
+    if (!token) {
+      toast({
+        title: "Authentication Error",
+        description: "Please login again",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       const decoded: JwtPayload = jwtDecode(token);
       //@ts-ignore
-      setId(decoded.data.user_id);
+      const userId = decoded.retailer_id || decoded.data?.user_id || decoded.user_id;
+      
+      if (!userId) {
+        toast({
+          title: "Error",
+          description: "Unable to identify user. Please login again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      setRetailerId(userId);
     } catch (error) {
       console.error("Error decoding JWT:", error);
+      toast({
+        title: "Error",
+        description: "Session expired. Please login again.",
+        variant: "destructive",
+      });
     }
-  }, []);
+  }, [toast]);
 
   // Handle MPIN Change
   const handleMpinChange = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!retailerId) {
+      toast({
+        title: "Error",
+        description: "User ID not found. Please login again.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // Validation
     if (mpinForm.newMpin !== mpinForm.confirmMpin) {
@@ -61,10 +106,19 @@ const ChangePasswordMpin = () => {
       return;
     }
 
+    if (mpinForm.oldMpin.length !== 4 || !/^\d+$/.test(mpinForm.oldMpin)) {
+      toast({
+        title: "Error",
+        description: "Current MPIN must be exactly 4 digits",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (mpinForm.oldMpin === mpinForm.newMpin) {
       toast({
         title: "Error",
-        description: "New MPIN must be different from old MPIN",
+        description: "New MPIN must be different from current MPIN",
         variant: "destructive",
       });
       return;
@@ -73,45 +127,73 @@ const ChangePasswordMpin = () => {
     setIsLoading(true);
 
     try {
-      // Verify old MPIN
-      const verifyResponse = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/user/verify/mpin`,
+      // Convert MPIN strings to integers
+      const oldMpinInt = parseInt(mpinForm.oldMpin, 10);
+      const newMpinInt = parseInt(mpinForm.newMpin, 10);
+
+      // Validate MPIN range (1000-9999)
+      if (oldMpinInt < 1000 || oldMpinInt > 9999) {
+        toast({
+          title: "Error",
+          description: "Invalid current MPIN format",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (newMpinInt < 1000 || newMpinInt > 9999) {
+        toast({
+          title: "Error",
+          description: "Invalid new MPIN format",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // Call API to update MPIN
+      const response = await axios.put(
+        `${API_BASE_URL}/retailer/update/mpin`,
         {
-          mpin: mpinForm.oldMpin,
-          user_id: id,
-        }
+          retailer_id: retailerId,
+          old_mpin: oldMpinInt,
+          new_mpin: newMpinInt,
+        },
+        getAuthHeaders()
       );
 
-      if (verifyResponse.status === 200) {
-        // Set new MPIN
-        const setResponse = await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL}/user/set/mpin`,
-          {
-            mpin: mpinForm.newMpin,
-            user_id: id,
-          }
-        );
+      if (response.status === 200) {
+        toast({
+          title: "Success",
+          description: "MPIN changed successfully",
+        });
 
-        if (setResponse.status === 200) {
-          toast({
-            title: "Success",
-            description: "MPIN changed successfully",
-          });
-
-          // Reset form
-          setMpinForm({
-            oldMpin: "",
-            newMpin: "",
-            confirmMpin: "",
-          });
-        }
+        // Reset form
+        setMpinForm({
+          oldMpin: "",
+          newMpin: "",
+          confirmMpin: "",
+        });
       }
     } catch (error: any) {
+      console.error("MPIN change error:", error);
+      
+      let errorMessage = "Failed to change MPIN. Please try again.";
+      
+      if (error.response?.status === 400) {
+        errorMessage = error.response?.data?.message || "Invalid MPIN provided";
+      } else if (error.response?.status === 401) {
+        errorMessage = "Current MPIN is incorrect";
+      } else if (error.response?.status === 404) {
+        errorMessage = "Retailer not found";
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+
       toast({
         title: "Error",
-        description:
-          error.response?.data?.message ||
-          "Failed to change MPIN. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -128,8 +210,6 @@ const ChangePasswordMpin = () => {
 
         <div className="flex-1 p-6 overflow-y-auto">
           <div className="max-w-2xl mx-auto space-y-8">
-            {/* Page Header */}
-            
             {/* MPIN Change Card */}
             <Card className="shadow-lg border-border/50">
               <CardHeader className="paybazaar-gradient text-white rounded-t-xl space-y-1 pb-6">
@@ -158,12 +238,15 @@ const ChangePasswordMpin = () => {
                         type={showOldMpin ? "text" : "password"}
                         placeholder="••••"
                         value={mpinForm.oldMpin}
-                        onChange={(e) =>
-                          setMpinForm({
-                            ...mpinForm,
-                            oldMpin: e.target.value.replace(/\D/g, ""),
-                          })
-                        }
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, "");
+                          if (value.length <= 4) {
+                            setMpinForm({
+                              ...mpinForm,
+                              oldMpin: value,
+                            });
+                          }
+                        }}
                         maxLength={4}
                         inputMode="numeric"
                         required
@@ -183,6 +266,11 @@ const ChangePasswordMpin = () => {
                         )}
                       </button>
                     </div>
+                    {mpinForm.oldMpin.length > 0 && mpinForm.oldMpin.length < 4 && (
+                      <p className="text-xs text-amber-600">
+                        MPIN must be 4 digits ({mpinForm.oldMpin.length}/4)
+                      </p>
+                    )}
                   </div>
 
                   {/* Divider */}
@@ -211,12 +299,15 @@ const ChangePasswordMpin = () => {
                         type={showNewMpin ? "text" : "password"}
                         placeholder="••••"
                         value={mpinForm.newMpin}
-                        onChange={(e) =>
-                          setMpinForm({
-                            ...mpinForm,
-                            newMpin: e.target.value.replace(/\D/g, ""),
-                          })
-                        }
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, "");
+                          if (value.length <= 4) {
+                            setMpinForm({
+                              ...mpinForm,
+                              newMpin: value,
+                            });
+                          }
+                        }}
                         maxLength={4}
                         inputMode="numeric"
                         required
@@ -236,6 +327,11 @@ const ChangePasswordMpin = () => {
                         )}
                       </button>
                     </div>
+                    {mpinForm.newMpin.length > 0 && mpinForm.newMpin.length < 4 && (
+                      <p className="text-xs text-amber-600">
+                        MPIN must be 4 digits ({mpinForm.newMpin.length}/4)
+                      </p>
+                    )}
                   </div>
 
                   {/* Confirm MPIN */}
@@ -252,12 +348,15 @@ const ChangePasswordMpin = () => {
                         type={showConfirmMpin ? "text" : "password"}
                         placeholder="••••"
                         value={mpinForm.confirmMpin}
-                        onChange={(e) =>
-                          setMpinForm({
-                            ...mpinForm,
-                            confirmMpin: e.target.value.replace(/\D/g, ""),
-                          })
-                        }
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, "");
+                          if (value.length <= 4) {
+                            setMpinForm({
+                              ...mpinForm,
+                              confirmMpin: value,
+                            });
+                          }
+                        }}
                         maxLength={4}
                         inputMode="numeric"
                         required
@@ -277,6 +376,25 @@ const ChangePasswordMpin = () => {
                         )}
                       </button>
                     </div>
+                    {mpinForm.confirmMpin.length > 0 && (
+                      <>
+                        {mpinForm.confirmMpin.length < 4 && (
+                          <p className="text-xs text-amber-600">
+                            MPIN must be 4 digits ({mpinForm.confirmMpin.length}/4)
+                          </p>
+                        )}
+                        {mpinForm.confirmMpin.length === 4 && mpinForm.newMpin !== mpinForm.confirmMpin && (
+                          <p className="text-xs text-red-600">
+                            MPINs do not match
+                          </p>
+                        )}
+                        {mpinForm.confirmMpin.length === 4 && mpinForm.newMpin === mpinForm.confirmMpin && (
+                          <p className="text-xs text-green-600">
+                            MPINs match ✓
+                          </p>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   {/* Security Tips */}
@@ -287,7 +405,9 @@ const ChangePasswordMpin = () => {
                     <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
                       <li>Use a unique 4-digit combination</li>
                       <li>Avoid using sequential numbers (e.g., 1234)</li>
+                      <li>Avoid using repeated digits (e.g., 1111)</li>
                       <li>Don't share your MPIN with anyone</li>
+                      <li>Change your MPIN regularly for security</li>
                     </ul>
                   </div>
 
@@ -295,8 +415,14 @@ const ChangePasswordMpin = () => {
                   <Button
                     type="submit"
                     size="lg"
-                    disabled={isLoading}
-                    className="w-full paybazaar-gradient text-white hover:opacity-90 transition-opacity h-12 text-base font-medium"
+                    disabled={
+                      isLoading ||
+                      mpinForm.oldMpin.length !== 4 ||
+                      mpinForm.newMpin.length !== 4 ||
+                      mpinForm.confirmMpin.length !== 4 ||
+                      mpinForm.newMpin !== mpinForm.confirmMpin
+                    }
+                    className="w-full paybazaar-gradient text-white hover:opacity-90 transition-opacity h-12 text-base font-medium disabled:opacity-50"
                   >
                     {isLoading ? (
                       <span className="flex items-center gap-2">

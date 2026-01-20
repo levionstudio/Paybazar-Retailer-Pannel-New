@@ -197,7 +197,7 @@ const GetFundRequests = () => {
       }
 
       const { data } = await axios.post(
-        "https://paybazaar-new.onrender.com/fund_request/get/requester",
+        "http://localhost:8080/fund_request/get/requester",
         payload,
         {
           headers: {
@@ -518,7 +518,6 @@ const GetFundRequests = () => {
                         setStartDate(e.target.value);
                         setCurrentPage(1);
                       }}
-                      max={endDate || new Date().toISOString().split("T")[0]}
                       className="h-9"
                     />
                   </div>
@@ -537,7 +536,6 @@ const GetFundRequests = () => {
                         setCurrentPage(1);
                       }}
                       min={startDate}
-                      max={new Date().toISOString().split("T")[0]}
                       className="h-9"
                     />
                   </div>
