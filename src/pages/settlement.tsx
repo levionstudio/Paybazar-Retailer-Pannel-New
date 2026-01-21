@@ -62,8 +62,8 @@ interface Beneficiary {
   account_number: string;
   ifsc_code: string;
   phone: string;
-  is_beneficiary_verified: boolean;
 }
+
 
 export default function Settlement() {
   const navigate = useNavigate();
@@ -83,12 +83,6 @@ export default function Settlement() {
   const [beneficiaryToDelete, setBeneficiaryToDelete] = useState<Beneficiary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
-  const [isMpinSet, setIsMpinSet] = useState(false);
-  const [showMpinDialog, setShowMpinDialog] = useState(false);
-  const [mpin, setMpin] = useState("");
-  const [confirmMpin, setConfirmMpin] = useState("");
-  const [mpinError, setMpinError] = useState<string | null>(null);
-  const [isSavingMpin, setIsSavingMpin] = useState(false);
   const [showMpinVerificationDialog, setShowMpinVerificationDialog] = useState(false);
   const [verifiedMpin, setVerifiedMpin] = useState("");
   const [mpinVerificationError, setMpinVerificationError] = useState<string | null>(null);
@@ -107,7 +101,7 @@ export default function Settlement() {
       const token = localStorage.getItem("authToken");
       
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/retailer-beneficiary/mobile/${phoneNumber}`,
+        `${import.meta.env.VITE_API_BASE_URL}/payout_beneficiary/mobile/${phoneNumber}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -222,65 +216,6 @@ export default function Settlement() {
   const handleAddBeneficiary = async () => {
     if (payoutPhoneNumber) {
       await fetchBeneficiaries(payoutPhoneNumber);
-      
-      // Check if this is the first beneficiary being added
-      if (beneficiaries.length === 0) {
-        // Prompt for MPIN setup
-        setIsMpinSet(false);
-        setShowMpinDialog(true);
-      }
-    }
-  };
-
-  const handleVerify = async (beneficiaryId: number) => {
-    try {
-      const token = localStorage.getItem("authToken");
-      const endpoint = `${import.meta.env.VITE_API_BASE_URL}/retailer-beneficiary/update/${beneficiaryId}/verify`;
-      
-      console.log("=== Bank Verification API ===");
-      console.log("Endpoint:", endpoint);
-      console.log("Beneficiary ID:", beneficiaryId);
-      console.log("Authorization Token:", token ? "Present" : "Missing");
-      console.log("=============================");
-      
-      const response = await axios.put(endpoint, {}, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      console.log("=== Verification API Response ===");
-      console.log("Status:", response.status);
-      console.log("Response Data:", response.data);
-      console.log("=================================");
-
-      if (response.data.status === "success") {
-        if (payoutPhoneNumber) {
-          await fetchBeneficiaries(payoutPhoneNumber);
-        }
-        toast({
-          title: "Success",
-          description: "Beneficiary verified successfully",
-        });
-      } else {
-        toast({
-          title: "Error",
-          description: "Verification failed. Please try again.",
-          variant: "destructive",
-        });
-      }
-    } catch (error: any) {
-      console.error("=== Verification API Error ===");
-      console.error("Error:", error);
-      console.error("Response:", error.response?.data);
-      console.error("==============================");
-      
-      toast({
-        title: "Error",
-        description: error.response?.data?.message || "Failed to verify beneficiary",
-        variant: "destructive",
-      });
     }
   };
 
@@ -297,7 +232,7 @@ export default function Settlement() {
       const token = localStorage.getItem("authToken");
       
       const response = await axios.delete(
-        `${import.meta.env.VITE_API_BASE_URL}/retailer-beneficiary/delete/${beneficiaryToDelete.beneficiary_id}`,
+        `${import.meta.env.VITE_API_BASE_URL}/payout_beneficiary/delete/${beneficiaryToDelete.beneficiary_id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -337,110 +272,12 @@ export default function Settlement() {
   };
 
   const handlePayClick = (beneficiary: Beneficiary) => {
-    if (!isMpinSet) {
-      toast({
-        title: "MPIN Setup Required",
-        description: "Please set your MPIN first to proceed with payout.",
-        variant: "destructive",
-      });
-      setShowMpinDialog(true);
-      return;
-    }
-    
     setSelectedBeneficiary(beneficiary);
     setPayFormData({
       transactionType: "",
       amount: "",
     });
     setShowPayDialog(true);
-  };
-
-  const handleMpinInput = (value: string, setter: (val: string) => void) => {
-    if (/^\d{0,4}$/.test(value)) {
-      setter(value);
-      setMpinError(null);
-    }
-  };
-
-  const handleMpinSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (mpin.length !== 4) {
-      setMpinError("MPIN must be exactly 4 digits.");
-      return;
-    }
-
-    if (mpin !== confirmMpin) {
-      setMpinError("MPIN and confirm MPIN must match.");
-      return;
-    }
-
-    if (!tokenData?.user_id) {
-      setMpinError("User information not available. Please try again.");
-      return;
-    }
-
-    const token = localStorage.getItem("authToken");
-    if (!token) {
-      toast({
-        title: "Error",
-        description: "Please log in again.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const setupPayload = { 
-      mpin: parseInt(mpin)
-    };
-
-    console.log("=== MPIN Setup Payload ===");
-    console.log("Retailer ID:", tokenData.user_id);
-    console.log("Payload:", setupPayload);
-    console.log("==========================");
-
-    try {
-      setIsSavingMpin(true);
-      const response = await axios.put(
-        `${import.meta.env.VITE_API_BASE_URL}/retailer/update/mpin/${tokenData.user_id}`,
-        setupPayload,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      console.log("=== MPIN Setup Response ===");
-      console.log("Response:", response.data);
-      console.log("===========================");
-
-      if (response.data.status === "success") {
-        setIsMpinSet(true);
-        setShowMpinDialog(false);
-        setMpin("");
-        setConfirmMpin("");
-        
-        toast({
-          title: "MPIN Set Successfully",
-          description: "You can now proceed with payout transactions.",
-        });
-      }
-    } catch (err: any) {
-      console.error("=== MPIN Setup Error ===");
-      console.error("Error:", err.response?.data);
-      console.error("========================");
-      
-      setMpinError(err.response?.data?.message || "Failed to set MPIN. Please try again.");
-      toast({
-        title: "Failed to Set MPIN",
-        description: err.response?.data?.message || "Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSavingMpin(false);
-    }
   };
 
   const handleMpinVerificationInput = (value: string) => {
@@ -476,16 +313,6 @@ export default function Settlement() {
       return;
     }
 
-    if (!isMpinSet) {
-      toast({
-        title: "MPIN Setup Required",
-        description: "Please set your MPIN first to proceed with payout.",
-        variant: "destructive",
-      });
-      setShowMpinDialog(true);
-      return;
-    }
-
     setShowMpinVerificationDialog(true);
     setVerifiedMpin("");
     setMpinVerificationError(null);
@@ -508,7 +335,7 @@ export default function Settlement() {
       setLoading(true);
       const token = localStorage.getItem("authToken");
       
-      if (!tokenData?.user_id) {
+      if (!tokenData?.user_id || !tokenData?.admin_id) {
         toast({
           title: "Error",
           description: "User ID not found. Please log in again.",
@@ -519,6 +346,7 @@ export default function Settlement() {
       }
       
       const payload = {
+        admin_id: tokenData.admin_id,
         retailer_id: tokenData.user_id,
         mobile_number: selectedBeneficiary.mobile_number,
         beneficiary_bank_name: selectedBeneficiary.bank_name,
@@ -535,7 +363,7 @@ export default function Settlement() {
       console.log("==============================");
 
       const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/payout/create`,
+        `https://server.paybazaar.in/payout/create`,
         payload,
         {
           headers: {
@@ -756,9 +584,7 @@ export default function Settlement() {
                         <TableHead className="font-bold text-white text-center w-[120px] min-w-[120px]">
                           PAY
                         </TableHead>
-                        <TableHead className="font-bold text-white text-center w-[130px] min-w-[130px]">
-                          VERIFY
-                        </TableHead>
+                       
                         <TableHead className="font-bold text-white text-center w-[120px] min-w-[120px]">
                           DELETE
                         </TableHead>
@@ -818,33 +644,13 @@ export default function Settlement() {
                                 size="sm"
                                 onClick={() => handlePayClick(beneficiary)}
                                 className="paybazaar-gradient text-white hover:opacity-90 shadow-md"
-                                disabled={!beneficiary.is_beneficiary_verified}
+                            
                               >
                                 <Eye className="h-4 w-4 mr-1" />
                                 Pay
                               </Button>
                             </TableCell>
-                            <TableCell className="text-center py-4">
-                              {beneficiary.is_beneficiary_verified ? (
-                                <Button
-                                  size="sm"
-                                  disabled
-                                  className="bg-green-600 text-white cursor-not-allowed opacity-75"
-                                >
-                                  <CheckCircle2 className="h-4 w-4 mr-1" />
-                                  Verified
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleVerify(beneficiary.beneficiary_id)}
-                                  className="bg-green-600 hover:bg-green-700 text-white shadow-md"
-                                >
-                                  <CheckCircle2 className="h-4 w-4 mr-1" />
-                                  Verify
-                                </Button>
-                              )}
-                            </TableCell>
+                           
                             <TableCell className="text-center py-4">
                               <Button
                                 size="sm"
@@ -1039,8 +845,8 @@ export default function Settlement() {
                     <SelectValue placeholder="Select Transfer Type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="IMPS">IMPS</SelectItem>
-                    <SelectItem value="NEFT">NEFT</SelectItem>
+                    <SelectItem value="5">IMPS</SelectItem>
+                    <SelectItem value="6">NEFT</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1085,88 +891,6 @@ export default function Settlement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {!isMpinSet && (
-        <Dialog
-          open={showMpinDialog}
-          onOpenChange={(open) => {
-            if (!isMpinSet) {
-              setShowMpinDialog(true);
-            } else {
-              setShowMpinDialog(open);
-            }
-          }}
-        >
-          <DialogContent
-            className="sm:max-w-md bg-background border-border"
-            onEscapeKeyDown={(event) => {
-              if (!isMpinSet) event.preventDefault();
-            }}
-            onInteractOutside={(event) => {
-              if (!isMpinSet) event.preventDefault();
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle className="text-xl font-semibold">
-                Set Your MPIN
-              </DialogTitle>
-              <DialogDescription>
-                Create a 4-digit MPIN to secure your transactions.
-              </DialogDescription>
-            </DialogHeader>
-
-            <form onSubmit={handleMpinSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="mpin">MPIN</Label>
-                <Input
-                  id="mpin"
-                  type="password"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={mpin}
-                  maxLength={4}
-                  placeholder="Enter 4-digit MPIN"
-                  onChange={(event) => handleMpinInput(event.target.value, setMpin)}
-                  required
-                  className="text-center tracking-[0.5em]"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="confirmMpin">Confirm MPIN</Label>
-                <Input
-                  id="confirmMpin"
-                  type="password"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={confirmMpin}
-                  maxLength={4}
-                  placeholder="Re-enter MPIN"
-                  onChange={(event) =>
-                    handleMpinInput(event.target.value, setConfirmMpin)
-                  }
-                  required
-                  className="text-center tracking-[0.5em]"
-                />
-              </div>
-
-              {mpinError && (
-                <p className="text-sm text-destructive font-medium">{mpinError}</p>
-              )}
-
-              <DialogFooter>
-                <Button
-                  type="submit"
-                  className="w-full paybazaar-gradient text-white hover:opacity-90"
-                  disabled={isSavingMpin}
-                >
-                  {isSavingMpin ? "Saving..." : "Save MPIN"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
 
       <Dialog
         open={showMpinVerificationDialog}

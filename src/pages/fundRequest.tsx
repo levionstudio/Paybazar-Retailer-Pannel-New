@@ -35,6 +35,12 @@ interface DecodedToken {
   exp: number;
   iat: number;
 }
+interface AdminBank {
+  admin_bank_id: number;
+  bank_name: string;
+  account_number: string;
+  ifsc_code: string;
+}
 
 /* -------------------- COMPONENT -------------------- */
 
@@ -54,7 +60,7 @@ const RequestFunds = () => {
   const [tokenData, setTokenData] = useState<DecodedToken | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [banks, setBanks] = useState<any>([]);
+const [banks, setBanks] = useState<AdminBank[]>([]);
 
   // Bank details for fund transfer
   const companyBankDetails = [
@@ -85,24 +91,40 @@ const RequestFunds = () => {
   };
 
   /* -------------------- TOKEN VALIDATION -------------------- */
+useEffect(() => {
+  const fetchAdminBanks = async () => {
+    try {
+      if (!tokenData?.admin_id) return;
 
-  useEffect(() => {
-    const fetchBanks = async () => {
+      const token = localStorage.getItem("authToken");
+
       const res = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/bank/get/all`,
+        `${import.meta.env.VITE_API_BASE_URL}/bank/get/admin/${tokenData.admin_id}`,
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
-      console.log("Banks:", res.data.data.banks);
-      if (res.data.status === "success") {
-        setBanks(res.data.data.banks);
+
+      console.log("Admin Banks API:", res.data);
+
+      if (
+        res.data?.status === "success" &&
+        Array.isArray(res.data.data?.admin_banks)
+      ) {
+        setBanks(res.data.data.admin_banks);
+      } else {
+        setBanks([]);
       }
-    };
-    fetchBanks();
-  }, []);
+    } catch (err) {
+      console.error("Failed to fetch admin banks:", err);
+      setBanks([]);
+    }
+  };
+
+  fetchAdminBanks();
+}, [tokenData?.admin_id]);
 
   useEffect(() => {
     const checkAuth = () => {
@@ -259,15 +281,16 @@ const RequestFunds = () => {
 
     // Build payload according to backend model
     // If remarks is empty, use default message
-    const payload = {
-      requester_id: tokenData.user_id,
-      request_to_id: tokenData.admin_id,
-      amount: parseFloat(formData.amount),
-      bank_name: formData.bank_name,
-      request_date: formData.request_date,
-      utr_number: formData.utr_number.trim(),
-      remarks: formData.remarks.trim() || "Admin, please approve",
-    };
+  const payload = {
+  requester_id: tokenData.user_id,
+  request_to_id: tokenData.admin_id,
+  amount: parseFloat(formData.amount),
+  bank_name: formData.bank_name,
+  request_date: new Date(formData.request_date).toISOString(), // ✅ FIX
+  utr_number: formData.utr_number.trim(),
+  remarks: formData.remarks.trim() || "Admin, please approve",
+};
+
 
     try {
       setLoading(true);
@@ -277,7 +300,7 @@ const RequestFunds = () => {
       });
 
       const { data } = await axios.post(
-        "https://paybazaar-new.onrender.com/fund_request/create",
+        "http://localhost:8080/fund_request/create",
         payload,
         {
           headers: {
@@ -522,25 +545,24 @@ const RequestFunds = () => {
                             <SelectValue placeholder="Select Bank" />
                           </SelectTrigger>
                           <SelectContent>
-                            {banks.map((bank) => (
-                              <SelectItem
-                                key={bank.bank_name}
-                                value={bank.bank_name}
-                              >
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <Building2 className="h-4 w-4" />
-                                    <span className="font-medium">
-                                      {bank.bank_name}
-                                    </span>
-                                  </div>
-                                  <span className="text-xs text-muted-foreground">
-                                    {bank.bank_address}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
+  {banks.map((bank) => (
+    <SelectItem
+      key={bank.admin_bank_id}
+      value={bank.bank_name}
+    >
+      <div className="flex flex-col">
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4" />
+          <span className="font-medium">{bank.bank_name}</span>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          IFSC: {bank.ifsc_code}
+        </span>
+      </div>
+    </SelectItem>
+  ))}
+</SelectContent>
+
                         </Select>
                       </div>
 
