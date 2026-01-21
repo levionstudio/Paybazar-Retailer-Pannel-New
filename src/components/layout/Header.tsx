@@ -93,13 +93,14 @@ export function Header() {
       try {
         const token = localStorage.getItem("authToken");
 
-        const res = await axios.get(
-          import.meta.env.VITE_API_BASE_URL + "/wallet/get/balance/retailer/${userId}",
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
+      const res = await axios.get(
+  `${import.meta.env.VITE_API_BASE_URL}/wallet/get/balance/retailer/${userId}`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+
         );
 
         // ✅ FIXED KEY
