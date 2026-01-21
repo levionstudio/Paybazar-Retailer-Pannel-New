@@ -102,7 +102,9 @@ export default function UserLedger() {
   const receiptRef = useRef<HTMLDivElement>(null);
 
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
-  const [allTransactions, setAllTransactions] = useState<LedgerTransaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<LedgerTransaction[]>(
+    []
+  );
   const [transactions, setTransactions] = useState<LedgerTransaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -112,7 +114,7 @@ export default function UserLedger() {
   // Get today's date
   const getTodayDate = () => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    return today.toISOString().split("T")[0];
   };
 
   // Filter states
@@ -186,7 +188,9 @@ export default function UserLedger() {
 
     try {
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/payout/get/ledger/${tokenData.user_id}`,
+        `${import.meta.env.VITE_API_BASE_URL}/payout/get/ledger/${
+          tokenData.user_id
+        }`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -199,13 +203,14 @@ export default function UserLedger() {
         response.data.status === "success" &&
         response.data.data?.payout_ledger_transactions
       ) {
-        const sortedTransactions = response.data.data.payout_ledger_transactions.sort(
-          (a: LedgerTransaction, b: LedgerTransaction) => {
-            const dateA = new Date(a.payout_created_at).getTime();
-            const dateB = new Date(b.payout_created_at).getTime();
-            return dateB - dateA;
-          }
-        );
+        const sortedTransactions =
+          response.data.data.payout_ledger_transactions.sort(
+            (a: LedgerTransaction, b: LedgerTransaction) => {
+              const dateA = new Date(a.payout_created_at).getTime();
+              const dateB = new Date(b.payout_created_at).getTime();
+              return dateB - dateA;
+            }
+          );
         setAllTransactions(sortedTransactions);
         setTransactions(sortedTransactions);
         toast({
@@ -376,10 +381,23 @@ export default function UserLedger() {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Ledger");
 
       const colWidths = [
-        { wch: 8 }, { wch: 38 }, { wch: 20 }, { wch: 15 },
-        { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 15 },
-        { wch: 15 }, { wch: 18 }, { wch: 12 }, { wch: 18 },
-        { wch: 15 }, { wch: 18 }, { wch: 18 }, { wch: 15 }, { wch: 12 },
+        { wch: 8 },
+        { wch: 38 },
+        { wch: 20 },
+        { wch: 15 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 18 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 18 },
+        { wch: 12 },
+        { wch: 18 },
+        { wch: 15 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 15 },
+        { wch: 12 },
       ];
       worksheet["!cols"] = colWidths;
 
@@ -504,7 +522,9 @@ export default function UserLedger() {
         imgWidth * ratio,
         imgHeight * ratio
       );
-      pdf.save(`ledger-receipt-${selectedTransaction.payout_transaction_id}.pdf`);
+      pdf.save(
+        `ledger-receipt-${selectedTransaction.payout_transaction_id}.pdf`
+      );
 
       toast({
         title: "Success",
@@ -613,7 +633,10 @@ export default function UserLedger() {
                 <Filter className="h-5 w-5 text-gray-600" />
                 <h2 className="text-lg font-semibold">Filters</h2>
               </div>
-              {(startDate !== getTodayDate() || endDate !== getTodayDate() || statusFilter !== "ALL" || searchTerm) && (
+              {(startDate !== getTodayDate() ||
+                endDate !== getTodayDate() ||
+                statusFilter !== "ALL" ||
+                searchTerm) && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -721,20 +744,46 @@ export default function UserLedger() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
-                    <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
-      
-                    <TableHead className="text-center whitespace-nowrap">PHONE</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">BANK NAME</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">BENEFICIARY</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">AMOUNT (₹)</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">COMMISSION (₹)</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">TDS (₹)</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">DEBIT (₹)</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">BEFORE BAL (₹)</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">AFTER BAL (₹)</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">TYPE</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">STATUS</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">ACTION</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      DATE & TIME
+                    </TableHead>
+
+                    <TableHead className="text-center whitespace-nowrap">
+                      PHONE
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      BANK NAME
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      BENEFICIARY
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      AMOUNT (₹)
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      COMMISSION (₹)
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      TDS (₹)
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      DEBIT (₹)
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      BEFORE BAL (₹)
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      AFTER BAL (₹)
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      TYPE
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      STATUS
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      ACTION
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -784,7 +833,7 @@ export default function UserLedger() {
                         <TableCell className="text-center text-sm whitespace-nowrap">
                           {formatDate(transaction.payout_created_at)}
                         </TableCell>
-                      
+
                         <TableCell className="text-center font-mono">
                           {transaction.mobile_number}
                         </TableCell>
@@ -863,38 +912,35 @@ export default function UserLedger() {
                     Previous
                   </Button>
                   <div className="flex items-center gap-1">
-                    {Array.from(
-                      { length: Math.min(5, totalPages) },
-                      (_, i) => {
-                        let pageNum;
-                        if (totalPages <= 5) {
-                          pageNum = i + 1;
-                        } else if (currentPage <= 3) {
-                          pageNum = i + 1;
-                        } else if (currentPage >= totalPages - 2) {
-                          pageNum = totalPages - 4 + i;
-                        } else {
-                          pageNum = currentPage - 2 + i;
-                        }
-                        return (
-                          <Button
-                            key={pageNum}
-                            variant={
-                              currentPage === pageNum ? "default" : "outline"
-                            }
-                            size="sm"
-                            onClick={() => setCurrentPage(pageNum)}
-                            className={
-                              currentPage === pageNum
-                                ? "paybazaar-gradient text-white"
-                                : ""
-                            }
-                          >
-                            {pageNum}
-                          </Button>
-                        );
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
                       }
-                    )}
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={
+                            currentPage === pageNum ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={
+                            currentPage === pageNum
+                              ? "paybazaar-gradient text-white"
+                              : ""
+                          }
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
                   </div>
                   <Button
                     variant="outline"
@@ -942,11 +988,14 @@ export default function UserLedger() {
           </div>
 
           {selectedTransaction && (
-            <div ref={receiptRef} className="bg-white p-8 space-y-6 border rounded-lg">
+            <div
+              ref={receiptRef}
+              className="bg-white p-8 space-y-6 border rounded-lg"
+            >
               {/* Header */}
               <div className="text-center border-b-2 pb-6">
                 <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                  LEDGER RECEIPT
+                  RECEIPT
                 </h1>
                 <p className="text-sm text-gray-600">
                   Paybazaar Technologies Pvt. Ltd.
@@ -955,12 +1004,12 @@ export default function UserLedger() {
 
               {/* Transaction Status */}
               <div className="space-y-3">
-                <div className="text-center">
+                {/* <div className="text-center">
                   <p className="text-xs text-gray-500 mb-1">Transaction ID</p>
                   <p className="font-mono text-sm font-semibold">
                     {selectedTransaction.payout_transaction_id}
                   </p>
-                </div>
+                </div> */}
 
                 <div
                   className={`text-center py-3 rounded-lg border-2 ${getStatusColorForReceipt(
@@ -1051,7 +1100,7 @@ export default function UserLedger() {
                       ₹{formatAmount(selectedTransaction.retailer_commision || 0)}
                     </span>
                   </div> */}
-{/* 
+                  {/* 
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="text-gray-600">TDS</span>
                     <span className="font-semibold text-red-600">
@@ -1059,7 +1108,7 @@ export default function UserLedger() {
                     </span>
                   </div> */}
 
-                  <div className="flex justify-between items-center py-2 border-b">
+                  {/* <div className="flex justify-between items-center py-2 border-b">
                     <span className="text-gray-600">Debit Amount</span>
                     <span className="font-semibold">
                       ₹{formatAmount(selectedTransaction.debit_amount || 0)}
@@ -1071,14 +1120,14 @@ export default function UserLedger() {
                     <span className="font-semibold">
                       ₹{formatAmount(selectedTransaction.before_balance || 0)}
                     </span>
-                  </div>
+                  </div> */}
 
-                  <div className="flex justify-between items-center py-2">
+                  {/* <div className="flex justify-between items-center py-2">
                     <span className="text-gray-600">After Balance</span>
                     <span className="font-semibold">
                       ₹{formatAmount(selectedTransaction.after_balance || 0)}
                     </span>
-                  </div>
+                  </div> */}
                 </div>
               </div>
 

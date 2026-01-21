@@ -869,12 +869,12 @@ const TDSCommissionPage = () => {
                     </p>
                   </div>
 
-                  <div className="col-span-2">
+                  {/* <div className="col-span-2">
                     <Label className="text-gray-600 text-xs">Transaction ID</Label>
                     <p className="font-mono text-sm font-medium mt-1">
                       {selectedTransaction.transaction_id}
                     </p>
-                  </div>
+                  </div> */}
 
                   <div>
                     <Label className="text-gray-600 text-xs">User ID</Label>

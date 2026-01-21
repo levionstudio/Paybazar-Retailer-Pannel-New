@@ -732,7 +732,7 @@ export default function ServiceReportSettlement() {
                 <TableHeader>
                   <TableRow className="bg-gray-50">
                     <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
+                    {/* <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead> */}
                     <TableHead className="text-center whitespace-nowrap">PHONE</TableHead>
                     <TableHead className="text-center whitespace-nowrap">BANK NAME</TableHead>
                     <TableHead className="text-center whitespace-nowrap">BENEFICIARY</TableHead>
@@ -786,9 +786,9 @@ export default function ServiceReportSettlement() {
                         <TableCell className="whitespace-nowrap text-center">
                           {formatDate(transaction.created_at)}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-center">
+                        {/* <TableCell className="font-mono text-xs text-center">
                           {transaction.payout_transaction_id}
-                        </TableCell>
+                        </TableCell> */}
                         <TableCell className="text-center">{transaction.mobile_number}</TableCell>
                         <TableCell className="text-center">
                           {transaction.beneficiary_bank_name}
