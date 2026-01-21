@@ -68,16 +68,21 @@ const TDSCommissionPage = () => {
     return today.toISOString().split('T')[0];
   };
   
-  // Transaction States
-  const [transactions, setTransactions] = useState<TDSCommission[]>([]);
+  // All transactions from API (unfiltered)
+  const [allTransactions, setAllTransactions] = useState<TDSCommission[]>([]);
+  
+  // Filtered transactions based on all filters
   const [filteredTransactions, setFilteredTransactions] = useState<TDSCommission[]>([]);
+  
+  // Filter states
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
+  
+  // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [recordsPerPage, setRecordsPerPage] = useState(10);
-  const [totalRecords, setTotalRecords] = useState(0);
   
   // Loading states
   const [loading, setLoading] = useState(false);
@@ -120,50 +125,20 @@ const TDSCommissionPage = () => {
     }
   }, [token, navigate]);
 
-  // Build query params helper
-  const buildQueryParams = (params: {
-    limit?: number;
-    offset?: number;
-    start_date?: string;
-    end_date?: string;
-    status?: string;
-  }) => {
-    const queryParams = new URLSearchParams();
-    
-    if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.offset !== undefined) queryParams.append('offset', params.offset.toString());
-    if (params.start_date) queryParams.append('start_date', params.start_date);
-    if (params.end_date) queryParams.append('end_date', params.end_date);
-    if (params.status && params.status !== 'ALL') queryParams.append('status', params.status);
-    
-    return queryParams.toString();
-  };
-
-  // Fetch TDS commissions with query params
-  const fetchTransactions = useCallback(async (applyFilters = false) => {
+  // Fetch ALL TDS commissions from API (no query params for filtering)
+  const fetchAllTransactions = useCallback(async () => {
     if (!userId || !token) {
       console.log("⏸️ Skipping fetch - waiting for user ID and token");
       return;
     }
 
-    console.log("🔄 Fetching TDS commissions...");
+    console.log("🔄 Fetching all TDS commissions...");
     setLoading(true);
     setSearched(true);
     
     try {
-      const offset = (currentPage - 1) * recordsPerPage;
-      const queryString = buildQueryParams({
-        limit: recordsPerPage,
-        offset: offset,
-        start_date: startDate,
-        end_date: endDate,
-        status: statusFilter,
-      });
-
-      console.log("📋 Query params:", queryString);
-
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/commision/get/tds/${userId}?${queryString}`,
+        `${import.meta.env.VITE_API_BASE_URL}/commision/get/tds/${userId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -173,27 +148,14 @@ const TDSCommissionPage = () => {
       
       const list: TDSCommission[] = response.data?.data?.tds_commisions || [];
       
-      console.log(`✅ Processing ${list.length} TDS commissions`);
+      console.log(`✅ Fetched ${list.length} TDS commissions`);
       
+      // Sort by date (newest first)
       const sorted = list.sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
 
-      setTransactions(sorted);
-      setTotalRecords(response.data?.data?.total || sorted.length);
-      
-      // Apply client-side search filter if needed
-      if (applyFilters && searchTerm.trim()) {
-        const filtered = sorted.filter((t) =>
-          t.transaction_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          t.user_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          t.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          t.pan_number.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-        setFilteredTransactions(filtered);
-      } else {
-        setFilteredTransactions(sorted);
-      }
+      setAllTransactions(sorted);
       
       if (sorted.length > 0) {
         toast.success(`Loaded ${sorted.length} TDS commission${sorted.length > 1 ? 's' : ''}`);
@@ -208,8 +170,7 @@ const TDSCommissionPage = () => {
         status: error.response?.status,
       });
       
-      setTransactions([]);
-      setFilteredTransactions([]);
+      setAllTransactions([]);
       
       if (error.response?.status === 404) {
         toast.info("No TDS commissions found");
@@ -219,33 +180,52 @@ const TDSCommissionPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [userId, token, currentPage, recordsPerPage, startDate, endDate, statusFilter, searchTerm]);
+  }, [userId, token]);
 
-  // Fetch on component mount
+  // Fetch data on component mount and when userId changes
   useEffect(() => {
     if (userId && token) {
-      fetchTransactions(true);
+      fetchAllTransactions();
     }
-  }, [userId, token, currentPage, recordsPerPage, startDate, endDate, statusFilter]);
+  }, [userId, token, fetchAllTransactions]);
 
-  // Apply client-side search
+  // Apply all filters (date, status, search) on the frontend
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredTransactions(transactions);
-      return;
+    let filtered = [...allTransactions];
+
+    // Date range filter
+    if (startDate || endDate) {
+      filtered = filtered.filter((t) => {
+        const txDate = new Date(t.created_at);
+        const txDateStr = txDate.toISOString().split('T')[0];
+        
+        const start = startDate || "1900-01-01";
+        const end = endDate || "2100-12-31";
+        
+        return txDateStr >= start && txDateStr <= end;
+      });
     }
 
-    const s = searchTerm.toLowerCase();
-    const filtered = transactions.filter((t) =>
-      t.transaction_id.toLowerCase().includes(s) ||
-      t.user_id.toLowerCase().includes(s) ||
-      t.user_name.toLowerCase().includes(s) ||
-      t.pan_number.toLowerCase().includes(s)
-    );
-    
+    // Status filter
+    if (statusFilter && statusFilter !== "ALL") {
+      filtered = filtered.filter((t) => t.status.toUpperCase() === statusFilter.toUpperCase());
+    }
+
+    // Search filter
+    if (searchTerm.trim()) {
+      const s = searchTerm.toLowerCase();
+      filtered = filtered.filter((t) =>
+        t.transaction_id.toLowerCase().includes(s) ||
+        t.user_id.toLowerCase().includes(s) ||
+        t.user_name.toLowerCase().includes(s) ||
+        t.pan_number.toLowerCase().includes(s) ||
+        t.tds_commision_id.toString().includes(s)
+      );
+    }
+
     setFilteredTransactions(filtered);
-    setCurrentPage(1);
-  }, [searchTerm, transactions]);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [allTransactions, startDate, endDate, statusFilter, searchTerm]);
 
   // Clear filters
   const clearFilters = () => {
@@ -257,43 +237,15 @@ const TDSCommissionPage = () => {
     toast.success("All filters cleared");
   };
 
-  // Export to Excel - fetch all data without pagination
+  // Export to Excel
   const exportToExcel = async () => {
     try {
-      toast.info("Fetching all data for export...");
-      
-      const queryString = buildQueryParams({
-        limit: 10000,
-        offset: 0,
-        start_date: startDate,
-        end_date: endDate,
-        status: statusFilter,
-      });
-
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/commision/get/tds/${userId}?${queryString}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      let allData: TDSCommission[] = response.data?.data?.tds_commisions || [];
-
-      // Apply search filter if present
-      if (searchTerm.trim()) {
-        const s = searchTerm.toLowerCase();
-        allData = allData.filter((t) =>
-          t.transaction_id.toLowerCase().includes(s) ||
-          t.user_id.toLowerCase().includes(s) ||
-          t.user_name.toLowerCase().includes(s) ||
-          t.pan_number.toLowerCase().includes(s)
-        );
-      }
-
-      if (allData.length === 0) {
+      if (filteredTransactions.length === 0) {
         toast.error("No TDS commissions to export");
         return;
       }
 
-      const data = allData.map((t, i) => ({
+      const data = filteredTransactions.map((t, i) => ({
         "S.No": i + 1,
         "Date & Time": formatDate(t.created_at),
         "TDS Commission ID": t.tds_commision_id,
@@ -307,10 +259,10 @@ const TDSCommissionPage = () => {
         "Status": t.status,
       }));
 
-      // Calculate totals
-      const totalCommission = allData.reduce((sum, t) => sum + t.commision, 0);
-      const totalTDS = allData.reduce((sum, t) => sum + t.tds, 0);
-      const totalPaidCommission = allData.reduce((sum, t) => sum + t.paid_commision, 0);
+      // Calculate totals from filtered data
+      const totalCommission = filteredTransactions.reduce((sum, t) => sum + t.commision, 0);
+      const totalTDS = filteredTransactions.reduce((sum, t) => sum + t.tds, 0);
+      const totalPaidCommission = filteredTransactions.reduce((sum, t) => sum + t.paid_commision, 0);
 
       const summaryRow = {
         "S.No": "",
@@ -342,7 +294,7 @@ const TDSCommissionPage = () => {
       const filename = `TDS_Commissions_${userId}_${timestamp}.xlsx`;
       
       XLSX.writeFile(wb, filename);
-      toast.success(`Exported ${allData.length} TDS commissions successfully`);
+      toast.success(`Exported ${filteredTransactions.length} TDS commissions successfully`);
     } catch (error) {
       console.error("Export error:", error);
       toast.error("Failed to export data");
@@ -392,11 +344,12 @@ const TDSCommissionPage = () => {
     setDetailsOpen(true);
   };
 
-  // Stats calculations
-  const totalCommission = transactions.reduce((sum, t) => sum + t.commision, 0);
-  const totalTDS = transactions.reduce((sum, t) => sum + t.tds, 0);
-  const totalPaidCommission = transactions.reduce((sum, t) => sum + t.paid_commision, 0);
+  // Stats calculations based on filtered data
+  const totalCommission = filteredTransactions.reduce((sum, t) => sum + t.commision, 0);
+  const totalTDS = filteredTransactions.reduce((sum, t) => sum + t.tds, 0);
+  const totalPaidCommission = filteredTransactions.reduce((sum, t) => sum + t.paid_commision, 0);
 
+  // Pagination calculations
   const totalPages = Math.ceil(filteredTransactions.length / recordsPerPage);
   const indexOfLastRecord = currentPage * recordsPerPage;
   const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
@@ -451,7 +404,7 @@ const TDSCommissionPage = () => {
               </div>
             </div>
             <Button
-              onClick={() => fetchTransactions(true)}
+              onClick={fetchAllTransactions}
               variant="ghost"
               size="sm"
               disabled={loading}
@@ -467,7 +420,7 @@ const TDSCommissionPage = () => {
         <main className="flex-1 p-6 overflow-auto bg-muted/10">
           <div className="mx-auto max-w-7xl space-y-6">
             {/* Stats Cards */}
-            {searched && transactions.length > 0 && (
+            {searched && filteredTransactions.length > 0 && (
               <motion.div
                 variants={containerVariants}
                 initial="hidden"
@@ -547,10 +500,7 @@ const TDSCommissionPage = () => {
                         <Input
                           type="date"
                           value={startDate}
-                          onChange={(e) => {
-                            setStartDate(e.target.value);
-                            setCurrentPage(1);
-                          }}
+                          onChange={(e) => setStartDate(e.target.value)}
                           max={endDate || getTodayDate()}
                           className="bg-white h-11"
                         />
@@ -564,10 +514,7 @@ const TDSCommissionPage = () => {
                         <Input
                           type="date"
                           value={endDate}
-                          onChange={(e) => {
-                            setEndDate(e.target.value);
-                            setCurrentPage(1);
-                          }}
+                          onChange={(e) => setEndDate(e.target.value)}
                           min={startDate}
                           max={getTodayDate()}
                           className="bg-white h-11"
@@ -578,10 +525,7 @@ const TDSCommissionPage = () => {
                         <Label className="text-sm font-medium text-gray-700">Status</Label>
                         <Select 
                           value={statusFilter} 
-                          onValueChange={(value) => {
-                            setStatusFilter(value);
-                            setCurrentPage(1);
-                          }}
+                          onValueChange={(value) => setStatusFilter(value)}
                         >
                           <SelectTrigger className="bg-white h-11">
                             <SelectValue />
@@ -647,7 +591,7 @@ const TDSCommissionPage = () => {
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-sm text-gray-700">
-                          Showing {indexOfFirstRecord + 1} to{" "}
+                          Showing {filteredTransactions.length === 0 ? 0 : indexOfFirstRecord + 1} to{" "}
                           {Math.min(indexOfLastRecord, filteredTransactions.length)} of{" "}
                           {filteredTransactions.length} commissions
                         </span>
@@ -868,13 +812,6 @@ const TDSCommissionPage = () => {
                       {selectedTransaction.tds_commision_id}
                     </p>
                   </div>
-
-                  {/* <div className="col-span-2">
-                    <Label className="text-gray-600 text-xs">Transaction ID</Label>
-                    <p className="font-mono text-sm font-medium mt-1">
-                      {selectedTransaction.transaction_id}
-                    </p>
-                  </div> */}
 
                   <div>
                     <Label className="text-gray-600 text-xs">User ID</Label>
