@@ -25,7 +25,7 @@ import RequestFunds from "./pages/fundRequest";
 import GetFundRequests from "./pages/requestedFund";
 import UserWalletTransactions from "./pages/accounthistory";
 import Settlement from "./pages/settlement";
-import UserPayouts from "./pages/UserPayouts";
+import UserPayouts from "./pages/Ledger";
 import ReceiptPage from "./pages/Receipt";
 import { Settings } from "lucide-react";
 import ChangePasswordMpin from "./pages/settings";
@@ -33,6 +33,7 @@ import ServicesReport from "./pages/ServiceReport";
 import ServiceReportSettlement from "./pages/ServiceReportSettlement";
 import MyDocuments from "./pages/Documents";
 import MyTickets from "./pages/Tickets";
+import TDSCommissionPage from "./pages/Tds";
 
 const queryClient = new QueryClient();
 
@@ -55,7 +56,7 @@ const App = () => (
               <Route path="/services" element={<Services />} />
               <Route path="/service/report" element={ <ServicesReport />} />
               <Route path="/service/settlement/report" element={ <ServiceReportSettlement />} />
-                  <Route path="/tickets" element={<MyTickets />} />
+               <Route path="/tickets" element={<MyTickets />} />
               <Route path="/documents" element={<MyDocuments />} />
               <Route path="/utility-payments" element={<UtilityPayments />} />
               <Route path="/aeps" element={<AePS />} />
@@ -71,6 +72,7 @@ const App = () => (
               <Route path="/settlement" element={<Settlement />} />
               <Route path="/reports" element={<UserPayouts />} />
               <Route path="/receipt/:transactionId" element={<ReceiptPage />} />
+              <Route path="/tds-commissions" element={<TDSCommissionPage />} />
 
               <Route path="/settings" element={<ChangePasswordMpin />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

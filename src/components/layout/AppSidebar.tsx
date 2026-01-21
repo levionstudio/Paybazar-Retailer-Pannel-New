@@ -14,6 +14,9 @@ import {
   HelpCircle,
   LogOut,
   CreditCard,
+  DollarSign,
+  IndianRupee,
+  File,
 } from "lucide-react";
 
 import { jwtDecode } from "jwt-decode";
@@ -61,7 +64,6 @@ const historyMenu = [
 ];
 
 const bottomMenu = [
-  // { title: "Ledger", href: "/reports", icon: FileText },
   { title:"Tickets", href: "/tickets", icon: HelpCircle },
   { title: "Contact Us", href: "/contact-us", icon: HelpCircle },
   { title: "Settings", href: "/settings", icon: Settings },
@@ -81,6 +83,7 @@ export function AppSidebar() {
   const [userName, setUserName] = useState("User");
   const [userId, setUserId] = useState("");
   const [fundOpen, setFundOpen] = useState(false);
+  const [tdsOpen, setTdsOpen] = useState(false);
 
   const iconClass = "h-5 w-5";
 
@@ -116,6 +119,11 @@ export function AppSidebar() {
   // Automatically open Fund collapse when inside /fund*
   useEffect(() => {
     if (pathname.startsWith("/fund")) setFundOpen(true);
+  }, [pathname]);
+
+  // Automatically open TDS collapse when inside /tds*
+  useEffect(() => {
+    if (pathname.startsWith("/tds")) setTdsOpen(true);
   }, [pathname]);
 
   const initials = userName?.[0]?.toUpperCase() || "U";
@@ -285,6 +293,88 @@ export function AppSidebar() {
                       }`}
                     >
                       Fund Requests
+                    </a>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          {/* LEDGER */}
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname === "/reports"}>
+                    <a
+                      href="/reports"
+                      className={`flex items-center rounded-lg transition-all ${
+                        isCollapsed
+                          ? "justify-center px-2 py-2"
+                          : "gap-3 px-3 py-2"
+                      }`}
+                    >
+                      <FileText className={iconClass} />
+                      {!isCollapsed && <span>Ledger</span>}
+                    </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          {/* TDS HISTORY COLLAPSIBLE */}
+          <SidebarGroup>
+            <SidebarGroupContent>
+              {isCollapsed ? (
+                // COLLAPSED MODE (just icon)
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname.startsWith("/tds")}
+                    >
+                      <a
+                        href="/tds-commissions"
+                        className="flex items-center rounded-lg px-2 py-2 justify-center"
+                      >
+                        <IndianRupee className={iconClass} />
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              ) : (
+                // EXPANDED MODE
+                <Collapsible open={tdsOpen} onOpenChange={setTdsOpen}>
+                  <CollapsibleTrigger
+                    className={`flex w-full items-center justify-between px-3 py-2 rounded-lg transition-all ${
+                      pathname.startsWith("/tds")
+                        ? "bg-sidebar-accent text-sidebar-primary-foreground"
+                        : "text-sidebar-foreground hover:bg-sidebar-accent"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <File className={iconClass} />
+                      <span>TDS History</span>
+                    </div>
+                    {tdsOpen ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </CollapsibleTrigger>
+
+                  <CollapsibleContent className="mt-1 space-y-1">
+                    {/* TDS Commissions */}
+                    <a
+                      href="/tds-commissions"
+                      className={`flex items-center px-3 py-2 pl-11 rounded-lg text-sm transition-all ${
+                        pathname === "/tds-commissions"
+                          ? "bg-sidebar-accent text-sidebar-foreground border border-white"
+                          : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50"
+                      }`}
+                    >
+                      TDS Commissions
                     </a>
                   </CollapsibleContent>
                 </Collapsible>

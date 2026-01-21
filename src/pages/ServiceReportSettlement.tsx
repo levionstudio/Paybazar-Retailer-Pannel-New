@@ -78,16 +78,22 @@ export default function ServiceReportSettlement() {
   const receiptRef = useRef<HTMLDivElement>(null);
 
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+
+  // Get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
 
   // Filter states
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(getTodayDate());
+  const [endDate, setEndDate] = useState(getTodayDate());
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [isExporting, setIsExporting] = useState(false);
 
@@ -132,7 +138,38 @@ export default function ServiceReportSettlement() {
     }
   }, []);
 
-  // Fetch transactions
+  // Helper function to get transfer type name
+  const getTransferTypeName = (transferType: string) => {
+    switch (transferType) {
+      case "5":
+        return "NEFT";
+      case "6":
+        return "IMPS";
+      default:
+        return transferType;
+    }
+  };
+
+  // Build query params helper
+  const buildQueryParams = (params: {
+    limit?: number;
+    offset?: number;
+    start_date?: string;
+    end_date?: string;
+    status?: string;
+  }) => {
+    const queryParams = new URLSearchParams();
+    
+    if (params.limit) queryParams.append('limit', params.limit.toString());
+    if (params.offset !== undefined) queryParams.append('offset', params.offset.toString());
+    if (params.start_date) queryParams.append('start_date', params.start_date);
+    if (params.end_date) queryParams.append('end_date', params.end_date);
+    if (params.status && params.status !== 'ALL') queryParams.append('status', params.status);
+    
+    return queryParams.toString();
+  };
+
+  // Fetch transactions with query params
   const fetchTransactions = async () => {
     if (!tokenData?.user_id) return;
 
@@ -140,8 +177,17 @@ export default function ServiceReportSettlement() {
     setLoading(true);
 
     try {
+      const offset = (currentPage - 1) * entriesPerPage;
+      const queryString = buildQueryParams({
+        limit: entriesPerPage,
+        offset: offset,
+        start_date: startDate,
+        end_date: endDate,
+        status: statusFilter,
+      });
+
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/payout/get/${tokenData.user_id}`,
+        `${import.meta.env.VITE_API_BASE_URL}/payout/get/${tokenData.user_id}?${queryString}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -158,24 +204,39 @@ export default function ServiceReportSettlement() {
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
-        setAllTransactions(sortedTransactions);
         setTransactions(sortedTransactions);
+        setTotalRecords(response.data.data?.total || sortedTransactions.length);
+        
+        if (sortedTransactions.length > 0) {
+          toast({
+            title: "Success",
+            description: `Loaded ${sortedTransactions.length} transactions`,
+          });
+        }
       } else {
-        setAllTransactions([]);
         setTransactions([]);
+        setTotalRecords(0);
       }
     } catch (error: any) {
       console.error("Error fetching transactions:", error);
-      setAllTransactions([]);
       setTransactions([]);
+      setTotalRecords(0);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to fetch transactions",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
 
+  // Fetch transactions when filters or pagination changes
   useEffect(() => {
-    if (tokenData) fetchTransactions();
-  }, [tokenData]);
+    if (tokenData) {
+      fetchTransactions();
+    }
+  }, [tokenData, currentPage, entriesPerPage, startDate, endDate, statusFilter]);
 
   // Auto-open receipt if navigated with transaction ID
   useEffect(() => {
@@ -184,8 +245,8 @@ export default function ServiceReportSettlement() {
     const txnIdFromStorage = localStorage.getItem("autoOpenReceipt");
     const txnIdToOpen = txnIdFromState || txnIdFromStorage;
 
-    if (txnIdToOpen && allTransactions.length > 0) {
-      const transaction = allTransactions.find(
+    if (txnIdToOpen && transactions.length > 0) {
+      const transaction = transactions.find(
         (txn) => txn.payout_transaction_id === txnIdToOpen
       );
       if (transaction) {
@@ -197,93 +258,100 @@ export default function ServiceReportSettlement() {
         }, 500);
       }
     }
-  }, [location.state, allTransactions]);
+  }, [location.state, transactions]);
 
-  // Combined Filter Effect
-  useEffect(() => {
-    let filtered = [...allTransactions];
-
-    // Apply search filter
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase().trim();
-      filtered = filtered.filter((transaction) => {
-        const searchableFields = [
-          transaction.payout_transaction_id,
-          transaction.mobile_number,
-          transaction.beneficiary_bank_name,
-          transaction.beneficiary_name,
-          transaction.beneficiary_account_number,
-          transaction.transfer_type,
-          transaction.payout_transaction_status,
-          transaction.amount.toString(),
-          formatDate(transaction.created_at),
-        ];
-        return searchableFields.some((field) =>
-          String(field).toLowerCase().includes(searchLower)
-        );
-      });
-    }
-
-    // Apply date range filter
-    if (startDate || endDate) {
-      filtered = filtered.filter((transaction) => {
-        const transactionDate = transaction.created_at;
-        if (!transactionDate) return false;
-
-        const txDate = new Date(transactionDate);
-        const start = startDate ? new Date(startDate) : null;
-        const end = endDate ? new Date(endDate) : null;
-
-        if (end) {
-          end.setHours(23, 59, 59, 999);
-        }
-
-        if (start && end) {
-          return txDate >= start && txDate <= end;
-        } else if (start) {
-          return txDate >= start;
-        } else if (end) {
-          return txDate <= end;
-        }
-        return true;
-      });
-    }
-
-    // Apply status filter
-    if (statusFilter !== "ALL") {
-      filtered = filtered.filter(
-        (transaction) =>
-          transaction.payout_transaction_status.toUpperCase() === statusFilter
-      );
-    }
-
-    setTransactions(filtered);
-    setCurrentPage(1);
-  }, [searchTerm, startDate, endDate, statusFilter, allTransactions]);
+  // Client-side search filter
+  const filteredTransactions = transactions.filter((transaction) => {
+    if (!searchTerm.trim()) return true;
+    
+    const searchLower = searchTerm.toLowerCase().trim();
+    const searchableFields = [
+      transaction.payout_transaction_id,
+      transaction.mobile_number,
+      transaction.beneficiary_bank_name,
+      transaction.beneficiary_name,
+      transaction.beneficiary_account_number,
+      getTransferTypeName(transaction.transfer_type),
+      transaction.payout_transaction_status,
+      transaction.amount.toString(),
+      formatDate(transaction.created_at),
+    ];
+    return searchableFields.some((field) =>
+      String(field).toLowerCase().includes(searchLower)
+    );
+  });
 
   // Clear filters
   const clearFilters = () => {
-    setStartDate("");
-    setEndDate("");
+    setStartDate(getTodayDate());
+    setEndDate(getTodayDate());
     setStatusFilter("ALL");
     setSearchTerm("");
+    setCurrentPage(1);
   };
 
-  // Export to Excel
-  const exportToExcel = () => {
-    if (transactions.length === 0) {
-      toast({
-        title: "No Data",
-        description: "No transactions to export",
-        variant: "destructive",
-      });
-      return;
-    }
+  // Export to Excel - fetch all data
+  const exportToExcel = async () => {
+    if (!tokenData?.user_id) return;
 
     setIsExporting(true);
 
     try {
-      const exportData = transactions.map((tx, index) => ({
+      toast({
+        title: "Exporting",
+        description: "Fetching all data for export...",
+      });
+
+      const token = localStorage.getItem("authToken");
+      const queryString = buildQueryParams({
+        limit: 10000,
+        offset: 0,
+        start_date: startDate,
+        end_date: endDate,
+        status: statusFilter,
+      });
+
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_BASE_URL}/payout/get/${tokenData.user_id}?${queryString}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      let allData: Transaction[] = response.data?.data?.payout_transactions || [];
+
+      // Apply search filter
+      if (searchTerm.trim()) {
+        const searchLower = searchTerm.toLowerCase().trim();
+        allData = allData.filter((transaction) => {
+          const searchableFields = [
+            transaction.payout_transaction_id,
+            transaction.mobile_number,
+            transaction.beneficiary_bank_name,
+            transaction.beneficiary_name,
+            transaction.beneficiary_account_number,
+            getTransferTypeName(transaction.transfer_type),
+            transaction.payout_transaction_status,
+            transaction.amount.toString(),
+          ];
+          return searchableFields.some((field) =>
+            String(field).toLowerCase().includes(searchLower)
+          );
+        });
+      }
+
+      if (allData.length === 0) {
+        toast({
+          title: "No Data",
+          description: "No transactions to export",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const exportData = allData.map((tx, index) => ({
         "S.No": index + 1,
         "Transaction ID": tx.payout_transaction_id,
         "Date & Time": formatDate(tx.created_at),
@@ -293,8 +361,7 @@ export default function ServiceReportSettlement() {
         "Account Number": tx.beneficiary_account_number,
         "IFSC Code": tx.beneficiary_ifsc_code,
         "Amount (₹)": tx.amount.toFixed(2),
-        "Commission (₹)": tx.retailer_commision.toFixed(2),
-        "Transfer Type": tx.transfer_type,
+        "Transfer Type": getTransferTypeName(tx.transfer_type),
         Status: tx.payout_transaction_status,
       }));
 
@@ -313,7 +380,6 @@ export default function ServiceReportSettlement() {
         { wch: 15 },
         { wch: 15 },
         { wch: 15 },
-        { wch: 15 },
         { wch: 12 },
       ];
       worksheet["!cols"] = colWidths;
@@ -325,7 +391,7 @@ export default function ServiceReportSettlement() {
 
       toast({
         title: "Success",
-        description: `Exported ${transactions.length} transactions to Excel`,
+        description: `Exported ${allData.length} transactions to Excel`,
       });
     } catch (error) {
       console.error("Export error:", error);
@@ -393,10 +459,7 @@ export default function ServiceReportSettlement() {
   };
 
   // Pagination
-  const totalPages = Math.ceil(transactions.length / entriesPerPage);
-  const startIndex = (currentPage - 1) * entriesPerPage;
-  const endIndex = startIndex + entriesPerPage;
-  const paginatedTransactions = transactions.slice(startIndex, endIndex);
+  const totalPages = Math.ceil(totalRecords / entriesPerPage);
 
   const handleViewReceipt = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
@@ -493,13 +556,13 @@ export default function ServiceReportSettlement() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen w-full bg-gray-50">
       <AppSidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
 
-        <main className="flex-1 p-6 space-y-6 min-w-0">
+        <main className="flex-1 p-6 space-y-6 overflow-auto">
           {/* Header Section */}
           <div className="paybazaar-gradient rounded-lg p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
@@ -551,8 +614,8 @@ export default function ServiceReportSettlement() {
                 <Filter className="h-5 w-5 text-gray-600" />
                 <h2 className="text-lg font-semibold">Filters</h2>
               </div>
-              {(startDate ||
-                endDate ||
+              {(startDate !== getTodayDate() ||
+                endDate !== getTodayDate() ||
                 statusFilter !== "ALL" ||
                 searchTerm) && (
                 <Button
@@ -574,7 +637,10 @@ export default function ServiceReportSettlement() {
                   id="startDate"
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   max={endDate || new Date().toISOString().split("T")[0]}
                   className="h-9"
                 />
@@ -587,7 +653,10 @@ export default function ServiceReportSettlement() {
                   id="endDate"
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   min={startDate}
                   max={new Date().toISOString().split("T")[0]}
                   className="h-9"
@@ -597,7 +666,10 @@ export default function ServiceReportSettlement() {
               {/* Status Filter */}
               <div className="space-y-2">
                 <Label>Transaction Status</Label>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <Select value={statusFilter} onValueChange={(value) => {
+                  setStatusFilter(value);
+                  setCurrentPage(1);
+                }}>
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="All Statuses" />
                   </SelectTrigger>
@@ -627,7 +699,7 @@ export default function ServiceReportSettlement() {
           </div>
 
           {/* Table Section */}
-          <div className="bg-white rounded-lg shadow ">
+          <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="p-4 border-b flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600">Show</span>
@@ -651,31 +723,31 @@ export default function ServiceReportSettlement() {
                 <span className="text-sm text-gray-600">entries</span>
               </div>
               <div className="text-sm text-gray-600">
-                (Showing {transactions.length} of {allTransactions.length})
+                (Showing {filteredTransactions.length} of {totalRecords} records)
               </div>
             </div>
 
-            <div className="w-full overflow-x-auto">
-              <Table className="min-w-[1400px] whitespace-nowrap">
+            <div className="overflow-x-auto">
+              <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>DATE & TIME</TableHead>
-                    <TableHead>TRANSACTION ID</TableHead>
-                    <TableHead>PHONE</TableHead>
-                    <TableHead>BANK NAME</TableHead>
-                    <TableHead>BENEFICIARY</TableHead>
-                    <TableHead>ACCOUNT NO.</TableHead>
-                    <TableHead>AMOUNT (₹)</TableHead>
-                    <TableHead>COMMISSION (₹)</TableHead>
-                    <TableHead>TYPE</TableHead>
-                    <TableHead>STATUS</TableHead>
-                    <TableHead>ACTION</TableHead>
+                  <TableRow className="bg-gray-50">
+                    <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">PHONE</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">BANK NAME</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">BENEFICIARY</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">ACCOUNT NO.</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">AMOUNT (₹)</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">TYPE</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">COMMISSION (₹)</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">STATUS</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">ACTION</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-12">
+                      <TableCell colSpan={10} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
                           <p className="text-gray-500">
@@ -684,23 +756,23 @@ export default function ServiceReportSettlement() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ) : paginatedTransactions.length === 0 ? (
+                  ) : filteredTransactions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-12">
+                      <TableCell colSpan={10} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <ReceiptIcon className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-500 font-medium">
                             {searchTerm ||
-                            startDate ||
-                            endDate ||
+                            startDate !== getTodayDate() ||
+                            endDate !== getTodayDate() ||
                             statusFilter !== "ALL"
                               ? "No matching transactions found"
                               : "No transactions found"}
                           </p>
                           <p className="text-sm text-gray-400">
                             {searchTerm ||
-                            startDate ||
-                            endDate ||
+                            startDate !== getTodayDate() ||
+                            endDate !== getTodayDate() ||
                             statusFilter !== "ALL"
                               ? "Try adjusting your filters"
                               : "Your settlement transactions will appear here"}
@@ -709,34 +781,34 @@ export default function ServiceReportSettlement() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    paginatedTransactions.map((transaction) => (
+                    filteredTransactions.map((transaction) => (
                       <TableRow key={transaction.payout_transaction_id}>
-                        <TableCell className="whitespace-nowrap">
+                        <TableCell className="whitespace-nowrap text-center">
                           {formatDate(transaction.created_at)}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="font-mono text-xs text-center">
                           {transaction.payout_transaction_id}
                         </TableCell>
-                        <TableCell>{transaction.mobile_number}</TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">{transaction.mobile_number}</TableCell>
+                        <TableCell className="text-center">
                           {transaction.beneficiary_bank_name}
                         </TableCell>
-                        <TableCell>{transaction.beneficiary_name}</TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="text-center">{transaction.beneficiary_name}</TableCell>
+                        <TableCell className="font-mono text-xs text-center">
                           {transaction.beneficiary_account_number}
                         </TableCell>
-                        <TableCell className="font-semibold">
+                        <TableCell className="font-semibold text-center">
                           ₹{formatAmount(transaction.amount)}
                         </TableCell>
-                        <TableCell className="text-green-600 font-semibold">
-                          ₹{formatAmount(transaction.retailer_commision)}
-                        </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
-                            {transaction.transfer_type}
+                            {getTransferTypeName(transaction.transfer_type)}
                           </span>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center font-semibold">
+                          ₹{formatAmount(transaction.retailer_commision)}
+                        </TableCell>
+                        <TableCell className="text-center">
                           <span
                             className={`px-2 py-1 text-xs rounded-full ${getStatusColor(
                               transaction.payout_transaction_status
@@ -745,7 +817,7 @@ export default function ServiceReportSettlement() {
                             {transaction.payout_transaction_status}
                           </span>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Button
                             onClick={() => handleViewReceipt(transaction)}
                             size="sm"
@@ -764,12 +836,10 @@ export default function ServiceReportSettlement() {
             </div>
 
             {/* Pagination */}
-            {transactions.length > 0 && totalPages > 1 && (
+            {totalRecords > 0 && totalPages > 1 && (
               <div className="p-4 border-t flex items-center justify-between">
                 <div className="text-sm text-gray-600">
-                  Showing {startIndex + 1} to{" "}
-                  {Math.min(endIndex, transactions.length)} of{" "}
-                  {transactions.length} entries
+                  Page {currentPage} of {totalPages} ({totalRecords} total records)
                 </div>
 
                 <div className="flex gap-2">
@@ -908,7 +978,7 @@ export default function ServiceReportSettlement() {
                   <div>
                     <p className="text-gray-500">Transfer Type</p>
                     <p className="font-medium">
-                      {selectedTransaction.transfer_type}
+                      {getTransferTypeName(selectedTransaction.transfer_type)}
                     </p>
                   </div>
 
@@ -965,17 +1035,10 @@ export default function ServiceReportSettlement() {
                 </h3>
 
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <span className="text-gray-600">Transfer Amount</span>
-                    <span className="font-semibold text-lg">
+                  <div className="flex justify-between items-center py-3 border-b">
+                    <span className="text-gray-600 font-medium">Transfer Amount</span>
+                    <span className="font-bold text-2xl text-gray-900">
                       ₹{formatAmount(selectedTransaction.amount)}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <span className="text-gray-600">Commission</span>
-                    <span className="font-semibold text-green-600">
-                      ₹{formatAmount(selectedTransaction.retailer_commision)}
                     </span>
                   </div>
                 </div>
