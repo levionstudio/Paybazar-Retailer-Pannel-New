@@ -1,11 +1,4 @@
-import {
-  Moon,
-  Sun,
-  Wallet,
-  User,
-  LogOut,
-  FileText,
-} from "lucide-react";
+import { Moon, Sun, Wallet, User, LogOut, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/ui/theme-provider";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -139,7 +132,7 @@ export function Header() {
   };
 
   return (
-    <header className="bg-card border-b border-border sticky top-0 z-50 h-16">
+    <header className="bg-card border-b border-border  w-full sticky top-0  h-16">
       <div className="flex h-full items-center justify-between px-4 lg:px-6">
         {/* LEFT */}
         <div className="flex items-center gap-4">
@@ -153,9 +146,7 @@ export function Header() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() =>
-              setTheme(theme === "light" ? "dark" : "light")
-            }
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
           >
             <Sun className="h-5 w-5 dark:hidden" />
             <Moon className="h-5 w-5 hidden dark:block" />
@@ -227,10 +218,7 @@ export function Header() {
       </div>
 
       {/* Logout Confirmation */}
-      <AlertDialog
-        open={showLogoutDialog}
-        onOpenChange={setShowLogoutDialog}
-      >
+      <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Logout</AlertDialogTitle>

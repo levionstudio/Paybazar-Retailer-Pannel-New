@@ -43,13 +43,12 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
 interface TokenData {
-
-    user_id: string;
-    user_unique_id: string;
-    user_name: string;
-    admin_id: string;
-    distributor_id: string;
-    master_distributor_id: string;
+  user_id: string;
+  user_unique_id: string;
+  user_name: string;
+  admin_id: string;
+  distributor_id: string;
+  master_distributor_id: string;
   exp: number;
 }
 
@@ -134,46 +133,45 @@ export default function ServiceReportSettlement() {
   }, []);
 
   // Fetch transactions
- const fetchTransactions = async () => {
-  if (!tokenData?.user_id) return;
+  const fetchTransactions = async () => {
+    if (!tokenData?.user_id) return;
 
-  const token = localStorage.getItem("authToken");
-  setLoading(true);
+    const token = localStorage.getItem("authToken");
+    setLoading(true);
 
-  try {
-    const response = await axios.get(
-      `${import.meta.env.VITE_API_BASE_URL}/payout/get/${tokenData.user_id}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    if (
-      response.data?.status === "success" &&
-      Array.isArray(response.data.data?.payout_transactions)
-    ) {
-      const sortedTransactions = response.data.data.payout_transactions.sort(
-        (a: Transaction, b: Transaction) =>
-          new Date(b.created_at).getTime() -
-          new Date(a.created_at).getTime()
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_BASE_URL}/payout/get/${tokenData.user_id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
 
-      setAllTransactions(sortedTransactions);
-      setTransactions(sortedTransactions);
-    } else {
+      if (
+        response.data?.status === "success" &&
+        Array.isArray(response.data.data?.payout_transactions)
+      ) {
+        const sortedTransactions = response.data.data.payout_transactions.sort(
+          (a: Transaction, b: Transaction) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        setAllTransactions(sortedTransactions);
+        setTransactions(sortedTransactions);
+      } else {
+        setAllTransactions([]);
+        setTransactions([]);
+      }
+    } catch (error: any) {
+      console.error("Error fetching transactions:", error);
       setAllTransactions([]);
       setTransactions([]);
+    } finally {
+      setLoading(false);
     }
-  } catch (error: any) {
-    console.error("Error fetching transactions:", error);
-    setAllTransactions([]);
-    setTransactions([]);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   useEffect(() => {
     if (tokenData) fetchTransactions();
@@ -498,10 +496,10 @@ export default function ServiceReportSettlement() {
     <div className="flex min-h-screen bg-gray-50">
       <AppSidebar />
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         <Header />
 
-        <main className="flex-1 p-6 space-y-6">
+        <main className="flex-1 p-6 space-y-6 min-w-0">
           {/* Header Section */}
           <div className="paybazaar-gradient rounded-lg p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
@@ -629,7 +627,7 @@ export default function ServiceReportSettlement() {
           </div>
 
           {/* Table Section */}
-          <div className="bg-white rounded-lg shadow">
+          <div className="bg-white rounded-lg shadow ">
             <div className="p-4 border-b flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600">Show</span>
@@ -657,8 +655,8 @@ export default function ServiceReportSettlement() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="w-full overflow-x-auto">
+              <Table className="min-w-[1400px] whitespace-nowrap">
                 <TableHeader>
                   <TableRow>
                     <TableHead>DATE & TIME</TableHead>
@@ -778,7 +776,9 @@ export default function ServiceReportSettlement() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.max(1, prev - 1))
+                    }
                     disabled={currentPage === 1}
                   >
                     Previous
@@ -841,11 +841,7 @@ export default function ServiceReportSettlement() {
 
           {/* Action Buttons */}
           <div className="flex gap-2 justify-end">
-            <Button
-              onClick={handlePrintReceipt}
-              variant="outline"
-              size="sm"
-            >
+            <Button onClick={handlePrintReceipt} variant="outline" size="sm">
               <Printer className="h-4 w-4 mr-2" />
               Print
             </Button>
