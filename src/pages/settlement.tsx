@@ -113,15 +113,15 @@ export default function Settlement() {
       console.log("Response:", response.data);
       console.log("====================================");
 
-      if (response.data.status === "success" && response.data.data) {
-        // Handle both array and single object response
-        const beneficiariesData = Array.isArray(response.data.data) 
-          ? response.data.data 
-          : [response.data.data];
-        setBeneficiaries(beneficiariesData);
-      } else {
-        setBeneficiaries([]);
-      }
+   if (
+  response.data.status === "success" &&
+  response.data.data?.beneficieries
+) {
+  setBeneficiaries(response.data.data.beneficieries);
+} else {
+  setBeneficiaries([]);
+}
+
     } catch (error: any) {
       console.error("Error fetching beneficiaries:", error);
       setBeneficiaries([]);
