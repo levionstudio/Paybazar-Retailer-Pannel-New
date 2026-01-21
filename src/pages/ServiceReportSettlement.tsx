@@ -142,9 +142,9 @@ export default function ServiceReportSettlement() {
   const getTransferTypeName = (transferType: string) => {
     switch (transferType) {
       case "5":
-        return "NEFT";
-      case "6":
         return "IMPS";
+      case "6":
+        return "NEFT";
       default:
         return transferType;
     }
@@ -198,7 +198,10 @@ export default function ServiceReportSettlement() {
       if (
         response.data?.status === "success" &&
         Array.isArray(response.data.data?.payout_transactions)
+
       ) {
+        console.log("=== Sorting Transactions ===");
+        console.log("Response:", response.data);
         const sortedTransactions = response.data.data.payout_transactions.sort(
           (a: Transaction, b: Transaction) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -247,7 +250,7 @@ export default function ServiceReportSettlement() {
 
     if (txnIdToOpen && transactions.length > 0) {
       const transaction = transactions.find(
-        (txn) => txn.payout_transaction_id === txnIdToOpen
+        (txn) => txn.operator_transaction_id === txnIdToOpen
       );
       if (transaction) {
         setTimeout(() => {
@@ -266,7 +269,7 @@ export default function ServiceReportSettlement() {
     
     const searchLower = searchTerm.toLowerCase().trim();
     const searchableFields = [
-      transaction.payout_transaction_id,
+      transaction.operator_transaction_id,
       transaction.mobile_number,
       transaction.beneficiary_bank_name,
       transaction.beneficiary_name,
@@ -327,7 +330,7 @@ export default function ServiceReportSettlement() {
         const searchLower = searchTerm.toLowerCase().trim();
         allData = allData.filter((transaction) => {
           const searchableFields = [
-            transaction.payout_transaction_id,
+            transaction.operator_transaction_id,
             transaction.mobile_number,
             transaction.beneficiary_bank_name,
             transaction.beneficiary_name,
@@ -353,7 +356,7 @@ export default function ServiceReportSettlement() {
 
       const exportData = allData.map((tx, index) => ({
         "S.No": index + 1,
-        "Transaction ID": tx.payout_transaction_id,
+        "Transaction ID": tx.operator_transaction_id  || "-",
         "Date & Time": formatDate(tx.created_at),
         "Phone Number": tx.mobile_number,
         "Bank Name": tx.beneficiary_bank_name,
@@ -506,7 +509,7 @@ export default function ServiceReportSettlement() {
         imgHeight * ratio
       );
       pdf.save(
-        `settlement-receipt-${selectedTransaction.payout_transaction_id}.pdf`
+        `settlement-receipt-${selectedTransaction.operator_transaction_id}.pdf`
       );
 
       toast({
@@ -534,7 +537,7 @@ export default function ServiceReportSettlement() {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Settlement Receipt</title>
+          <title>Receipt</title>
           <style>
             body { 
               font-family: Arial, sans-serif; 
@@ -732,7 +735,7 @@ export default function ServiceReportSettlement() {
                 <TableHeader>
                   <TableRow className="bg-gray-50">
                     <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
-                    {/* <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead> */}
+                    <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
                     <TableHead className="text-center whitespace-nowrap">PHONE</TableHead>
                     <TableHead className="text-center whitespace-nowrap">BANK NAME</TableHead>
                     <TableHead className="text-center whitespace-nowrap">BENEFICIARY</TableHead>
@@ -782,13 +785,13 @@ export default function ServiceReportSettlement() {
                     </TableRow>
                   ) : (
                     filteredTransactions.map((transaction) => (
-                      <TableRow key={transaction.payout_transaction_id}>
+                      <TableRow key={transaction.operator_transaction_id}>
                         <TableCell className="whitespace-nowrap text-center">
                           {formatDate(transaction.created_at)}
                         </TableCell>
-                        {/* <TableCell className="font-mono text-xs text-center">
-                          {transaction.payout_transaction_id}
-                        </TableCell> */}
+                        <TableCell className="font-mono text-xs text-center">
+                          {transaction.operator_transaction_id ||"-"}
+                        </TableCell>
                         <TableCell className="text-center">{transaction.mobile_number}</TableCell>
                         <TableCell className="text-center">
                           {transaction.beneficiary_bank_name}
@@ -906,7 +909,7 @@ export default function ServiceReportSettlement() {
       <Dialog open={isReceiptOpen} onOpenChange={setIsReceiptOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Settlement Receipt</DialogTitle>
+            <DialogTitle> Receipt</DialogTitle>
           </DialogHeader>
 
           {/* Action Buttons */}
@@ -934,7 +937,7 @@ export default function ServiceReportSettlement() {
               {/* Header */}
               <div className="text-center border-b pb-6">
                 <h2 className="text-2xl font-bold text-gray-800">
-                  SETTLEMENT RECEIPT
+                   RECEIPT
                 </h2>
                 <p className="text-sm text-gray-600 mt-2">
                   Paybazaar Technologies Pvt. Ltd.
@@ -946,7 +949,7 @@ export default function ServiceReportSettlement() {
                 <div className="text-center">
                   <p className="text-xs text-gray-500 mb-1">Transaction ID</p>
                   <p className="font-mono text-sm font-semibold">
-                    {selectedTransaction.payout_transaction_id}
+                    {selectedTransaction.operator_transaction_id}
                   </p>
                 </div>
 

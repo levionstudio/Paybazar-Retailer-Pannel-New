@@ -132,9 +132,9 @@ export default function UserLedger() {
   const getTransferTypeName = (transferType: string) => {
     switch (transferType) {
       case "5":
-        return "NEFT";
-      case "6":
         return "IMPS";
+      case "6":
+        return "NEFT";
       default:
         return transferType;
     }
@@ -256,7 +256,7 @@ export default function UserLedger() {
 
     if (txnIdToOpen && allTransactions.length > 0) {
       const transaction = allTransactions.find(
-        (txn) => txn.payout_transaction_id === txnIdToOpen
+        (txn) => txn.operator_transaction_id === txnIdToOpen
       );
 
       if (transaction) {
@@ -279,7 +279,7 @@ export default function UserLedger() {
       const searchLower = searchTerm.toLowerCase().trim();
       filtered = filtered.filter((transaction) => {
         const searchableFields = [
-          transaction.payout_transaction_id,
+          transaction.operator_transaction_id,
           transaction.mobile_number,
           transaction.beneficiary_bank_name,
           transaction.beneficiary_name,
@@ -359,7 +359,7 @@ export default function UserLedger() {
     try {
       const exportData = transactions.map((tx, index) => ({
         "S.No": index + 1,
-        "Transaction ID": tx.payout_transaction_id,
+        "Transaction ID": tx.operator_transaction_id,
         "Date & Time": formatDate(tx.payout_created_at),
         "Phone Number": tx.mobile_number,
         "Bank Name": tx.beneficiary_bank_name,
@@ -523,7 +523,7 @@ export default function UserLedger() {
         imgHeight * ratio
       );
       pdf.save(
-        `ledger-receipt-${selectedTransaction.payout_transaction_id}.pdf`
+        `ledger-receipt-${selectedTransaction.operator_transaction_id}.pdf`
       );
 
       toast({
@@ -552,7 +552,7 @@ export default function UserLedger() {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Ledger Receipt</title>
+          <title> Receipt</title>
           <style>
             body { 
               font-family: Arial, sans-serif; 
@@ -747,7 +747,7 @@ export default function UserLedger() {
                     <TableHead className="text-center whitespace-nowrap">
                       DATE & TIME
                     </TableHead>
-
+                    <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
                     <TableHead className="text-center whitespace-nowrap">
                       PHONE
                     </TableHead>
@@ -825,13 +825,16 @@ export default function UserLedger() {
                   ) : (
                     paginatedTransactions.map((transaction, index) => (
                       <TableRow
-                        key={transaction.payout_transaction_id}
+                        key={transaction.operator_transaction_id}
                         className={`hover:bg-gray-50 ${
                           index % 2 === 0 ? "bg-white" : "bg-gray-50/50"
                         }`}
                       >
                         <TableCell className="text-center text-sm whitespace-nowrap">
                           {formatDate(transaction.payout_created_at)}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-center">
+                          {transaction.operator_transaction_id ||"-"}
                         </TableCell>
 
                         <TableCell className="text-center font-mono">
@@ -963,7 +966,7 @@ export default function UserLedger() {
       <Dialog open={isReceiptOpen} onOpenChange={setIsReceiptOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Ledger Receipt</DialogTitle>
+            <DialogTitle> Receipt</DialogTitle>
           </DialogHeader>
 
           {/* Action Buttons */}
@@ -1004,12 +1007,12 @@ export default function UserLedger() {
 
               {/* Transaction Status */}
               <div className="space-y-3">
-                {/* <div className="text-center">
+                <div className="text-center">
                   <p className="text-xs text-gray-500 mb-1">Transaction ID</p>
                   <p className="font-mono text-sm font-semibold">
-                    {selectedTransaction.payout_transaction_id}
+                    {selectedTransaction.operator_transaction_id}
                   </p>
-                </div> */}
+                </div>
 
                 <div
                   className={`text-center py-3 rounded-lg border-2 ${getStatusColorForReceipt(
