@@ -286,7 +286,7 @@ useEffect(() => {
   request_to_id: tokenData.admin_id,
   amount: parseFloat(formData.amount),
   bank_name: formData.bank_name,
-  request_date: new Date(formData.request_date).toISOString(), // ✅ FIX
+  request_date: new Date(formData.request_date).toISOString(), 
   utr_number: formData.utr_number.trim(),
   remarks: formData.remarks.trim() || "Admin, please approve",
 };
@@ -300,7 +300,7 @@ useEffect(() => {
       });
 
       const { data } = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/fund_request`,
+        `${import.meta.env.VITE_API_BASE_URL}/fund_request/create`,
         payload,
         {
           headers: {
