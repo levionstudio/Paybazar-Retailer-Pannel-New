@@ -63,20 +63,20 @@ const RequestFunds = () => {
 const [banks, setBanks] = useState<AdminBank[]>([]);
 
   // Bank details for fund transfer
-  const companyBankDetails = [
-    {
-      bankName: "AXIS BANK",
-      accountHolder: "PAYBAZAAR TECHNOLOGIES PRIVATE LIMITED",
-      accountNumber: "925020043148912",
-      ifscCode: "UTIB0000056",
-    },
-    {
-      bankName: "IDFC FIRST Bank",
-      accountHolder: "PAYBAZAAR TECHNOLOGIES PRIVATE LIMITED",
-      accountNumber: "10248252306",
-      ifscCode: "IDFB0020137",
-    },
-  ];
+  // const companyBankDetails = [
+  //   {
+  //     bankName: "AXIS BANK",
+  //     accountHolder: "PAYBAZAAR TECHNOLOGIES PRIVATE LIMITED",
+  //     accountNumber: "925020043148912",
+  //     ifscCode: "UTIB0000056",
+  //   },
+  //   {
+  //     bankName: "IDFC FIRST Bank",
+  //     accountHolder: "PAYBAZAAR TECHNOLOGIES PRIVATE LIMITED",
+  //     accountNumber: "10248252306",
+  //     ifscCode: "IDFB0020137",
+  //   },
+  // ];
 
   /* -------------------- COPY TO CLIPBOARD -------------------- */
 
@@ -400,8 +400,8 @@ useEffect(() => {
           <main className="p-6 flex flex-col items-center">
             {/* Bank Details Section */}
             <div className="flex flex-col max-w-3xl w-full mb-6">
-              <Card className="shadow-lg border-2 border-primary/20 rounded-xl overflow-hidden">
-                <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
+              {/* <Card className="shadow-lg border-2 border-primary/20 rounded-xl overflow-hidden"> */}
+                {/* <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b">
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <Building2 className="h-5 w-5 text-primary" />
                     Transfer Funds to Paybazaar Account
@@ -410,8 +410,8 @@ useEffect(() => {
                     Please transfer the amount to one of the following bank
                     accounts
                   </CardDescription>
-                </CardHeader>
-                <CardContent className="p-6">
+                </CardHeader> */}
+                {/* <CardContent className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {companyBankDetails.map((bank, index) => (
                       <div
@@ -500,8 +500,8 @@ useEffect(() => {
                       number, amount, etc.) to complete the fund request.
                     </p>
                   </div>
-                </CardContent>
-              </Card>
+                </CardContent> */}
+              {/* </Card> */}
             </div>
 
             {/* Fund Request Form */}
