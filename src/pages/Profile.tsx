@@ -211,7 +211,7 @@ export default function Profile() {
 
         // Fetch retailer data
         const response = await axios.get(
-          `http://localhost:8080/retailer/get/retailer/${decoded.user_id}`,
+          `${import.meta.env.VITE_API_BASE_URL}/retailer/get/retailer/${decoded.user_id}`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
