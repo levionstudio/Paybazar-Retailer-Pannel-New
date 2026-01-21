@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -25,9 +26,8 @@ interface BeneficiaryFormData {
   ifsc: string;
   accountNumber: string;
   beneficiaryName: string;
-  beneficiaryPhone: string; // ✅ NEW
+  beneficiaryPhone: string;
 }
-
 
 interface Bank {
   bank_name: string;
@@ -51,13 +51,13 @@ export function AddBeneficiaryDialog({
 }: AddBeneficiaryDialogProps) {
   const { toast } = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
-const [formData, setFormData] = useState<BeneficiaryFormData>({
-  bank: "",
-  ifsc: "",
-  accountNumber: "",
-  beneficiaryName: "",
-  beneficiaryPhone: "", // ✅ NEW
-});
+  const [formData, setFormData] = useState<BeneficiaryFormData>({
+    bank: "",
+    ifsc: "",
+    accountNumber: "",
+    beneficiaryName: "",
+    beneficiaryPhone: "",
+  });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -114,54 +114,53 @@ const [formData, setFormData] = useState<BeneficiaryFormData>({
     }
   }, [open, toast]);
 
-useEffect(() => {
-  if (!open) {
-    setFormData({
-      bank: "",
-      ifsc: "",
-      accountNumber: "",
-      beneficiaryName: "",
-      beneficiaryPhone: "",
-    });
-    setErrors({});
-    setSelectedBankIFSC("");
-    setBankSearchTerm("");
-  }
-}, [open]);
-
+  useEffect(() => {
+    if (!open) {
+      setFormData({
+        bank: "",
+        ifsc: "",
+        accountNumber: "",
+        beneficiaryName: "",
+        beneficiaryPhone: "",
+      });
+      setErrors({});
+      setSelectedBankIFSC("");
+      setBankSearchTerm("");
+    }
+  }, [open]);
 
   const filteredBanks = banks.filter((bank) =>
     bank.bank_name.toLowerCase().includes(bankSearchTerm.toLowerCase())
   );
-const validateForm = () => {
-  const newErrors: Record<string, string> = {};
 
-  if (!formData.bank) newErrors.bank = "Please select a bank";
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
 
-  if (!formData.ifsc) {
-    newErrors.ifsc = "IFSC code is required";
-  } else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.ifsc)) {
-    newErrors.ifsc = "Invalid IFSC code format";
-  }
+    if (!formData.bank) newErrors.bank = "Please select a bank";
 
-  if (!formData.accountNumber) {
-    newErrors.accountNumber = "Account number is required";
-  } else if (formData.accountNumber.length < 9) {
-    newErrors.accountNumber = "Account number must be at least 9 digits";
-  }
+    if (!formData.ifsc) {
+      newErrors.ifsc = "IFSC code is required";
+    } else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.ifsc)) {
+      newErrors.ifsc = "Invalid IFSC code format";
+    }
 
-  if (!formData.beneficiaryName) {
-    newErrors.beneficiaryName = "Beneficiary name is required";
-  }
+    if (!formData.accountNumber) {
+      newErrors.accountNumber = "Account number is required";
+    } else if (formData.accountNumber.length < 9) {
+      newErrors.accountNumber = "Account number must be at least 9 digits";
+    }
 
-  if (!formData.beneficiaryPhone || formData.beneficiaryPhone.length !== 10) {
-    newErrors.beneficiaryPhone = "Valid beneficiary mobile number is required";
-  }
+    if (!formData.beneficiaryName) {
+      newErrors.beneficiaryName = "Beneficiary name is required";
+    }
 
-  setErrors(newErrors);
-  return Object.keys(newErrors).length === 0;
-};
+    if (!formData.beneficiaryPhone || formData.beneficiaryPhone.length !== 10) {
+      newErrors.beneficiaryPhone = "Valid beneficiary mobile number is required";
+    }
 
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,23 +185,21 @@ const validateForm = () => {
         throw new Error("Retailer ID not found. Please login again.");
       }
       
-    const payload = {
-  retailer_id: retailerId,
-  mobile_number: mobileNumber,             // ✅ remitter phone
-  bank_name: formData.bank,
-  beneficiary_name: formData.beneficiaryName,
-  account_number: formData.accountNumber,
-  ifsc_code: formData.ifsc,
-  phone: formData.beneficiaryPhone,         // ✅ beneficiary phone
-};
-
+      const payload = {
+        mobile_number: mobileNumber,
+        bank_name: formData.bank,
+        beneficiary_name: formData.beneficiaryName,
+        account_number: formData.accountNumber,
+        ifsc_code: formData.ifsc,
+        beneficiary_phone: formData.beneficiaryPhone,
+      };
 
       console.log("=== Add Beneficiary Payload ===");
       console.log("Payload:", payload);
       console.log("===============================");
 
       const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/payout_beneficiary/create`,
+        `${import.meta.env.VITE_API_BASE_URL}/bene/add/beneficiary`,
         payload,
         {
           headers: {
@@ -226,13 +223,13 @@ const validateForm = () => {
           onAdd(formData);
         }
 
-     setFormData({
-  bank: "",
-  ifsc: "",
-  accountNumber: "",
-  beneficiaryName: "",
-  beneficiaryPhone: "",
-});
+        setFormData({
+          bank: "",
+          ifsc: "",
+          accountNumber: "",
+          beneficiaryName: "",
+          beneficiaryPhone: "",
+        });
 
         setErrors({});
         setSelectedBankIFSC("");
@@ -254,19 +251,19 @@ const validateForm = () => {
     }
   };
 
-const handleCancel = () => {
-  setFormData({
-    bank: "",
-    ifsc: "",
-    accountNumber: "",
-    beneficiaryName: "",
-    beneficiaryPhone: "",
-  });
-  setErrors({});
-  setSelectedBankIFSC("");
-  setBankSearchTerm("");
-  onOpenChange(false);
-};
+  const handleCancel = () => {
+    setFormData({
+      bank: "",
+      ifsc: "",
+      accountNumber: "",
+      beneficiaryName: "",
+      beneficiaryPhone: "",
+    });
+    setErrors({});
+    setSelectedBankIFSC("");
+    setBankSearchTerm("");
+    onOpenChange(false);
+  };
 
   const handleBankChange = (bankName: string) => {
     const selectedBank = banks.find((b) => b.bank_name === bankName);
@@ -300,6 +297,9 @@ const handleCancel = () => {
           <DialogTitle className="text-lg font-semibold tracking-wider">
             ADD BENEFICIARY
           </DialogTitle>
+          <DialogDescription>
+            Add a new beneficiary for payout transactions
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6 mt-6">
@@ -443,30 +443,30 @@ const handleCancel = () => {
               <p className="text-red-500 text-xs">{errors.beneficiaryName}</p>
             )}
           </div>
-          {/* Beneficiary Phone */}
-<div className="space-y-2">
-  <Label htmlFor="beneficiaryPhone" className="text-sm font-medium">
-    Beneficiary Mobile Number
-  </Label>
-  <Input
-    id="beneficiaryPhone"
-    type="tel"
-    inputMode="numeric"
-    maxLength={10}
-    value={formData.beneficiaryPhone}
-    onChange={(e) =>
-      setFormData({
-        ...formData,
-        beneficiaryPhone: e.target.value.replace(/\D/g, "").slice(0, 10),
-      })
-    }
-    placeholder="Enter Beneficiary Mobile Number"
-  />
-  {errors.beneficiaryPhone && (
-    <p className="text-red-500 text-xs">{errors.beneficiaryPhone}</p>
-  )}
-</div>
 
+          {/* Beneficiary Phone */}
+          <div className="space-y-2">
+            <Label htmlFor="beneficiaryPhone" className="text-sm font-medium">
+              Beneficiary Mobile Number
+            </Label>
+            <Input
+              id="beneficiaryPhone"
+              type="tel"
+              inputMode="numeric"
+              maxLength={10}
+              value={formData.beneficiaryPhone}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  beneficiaryPhone: e.target.value.replace(/\D/g, "").slice(0, 10),
+                })
+              }
+              placeholder="Enter Beneficiary Mobile Number"
+            />
+            {errors.beneficiaryPhone && (
+              <p className="text-red-500 text-xs">{errors.beneficiaryPhone}</p>
+            )}
+          </div>
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3 pt-4">

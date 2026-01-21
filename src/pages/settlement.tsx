@@ -54,16 +54,15 @@ interface DecodedToken {
 }
 
 interface Beneficiary {
-  beneficiary_id: number;
-  retailer_id: string;
+  beneficiary_id: string;
   mobile_number: string;
   bank_name: string;
   beneficiary_name: string;
   account_number: string;
   ifsc_code: string;
-  phone: string;
+  beneficiary_phone: string;
+  beneficiary_verified: boolean;
 }
-
 
 export default function Settlement() {
   const navigate = useNavigate();
@@ -101,7 +100,7 @@ export default function Settlement() {
       const token = localStorage.getItem("authToken");
       
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/payout_beneficiary/mobile/${phoneNumber}`,
+        `${import.meta.env.VITE_API_BASE_URL}/bene/get/beneficiaries/${phoneNumber}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -115,7 +114,11 @@ export default function Settlement() {
       console.log("====================================");
 
       if (response.data.status === "success" && response.data.data) {
-        setBeneficiaries(response.data.data);
+        // Handle both array and single object response
+        const beneficiariesData = Array.isArray(response.data.data) 
+          ? response.data.data 
+          : [response.data.data];
+        setBeneficiaries(beneficiariesData);
       } else {
         setBeneficiaries([]);
       }
@@ -231,8 +234,8 @@ export default function Settlement() {
       setIsDeleting(true);
       const token = localStorage.getItem("authToken");
       
-      const response = await axios.delete(
-        `${import.meta.env.VITE_API_BASE_URL}/payout_beneficiary/delete/${beneficiaryToDelete.beneficiary_id}`,
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_BASE_URL}/bene/delete/beneficiary/${beneficiaryToDelete.beneficiary_id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -363,7 +366,7 @@ export default function Settlement() {
       console.log("==============================");
 
       const response = await axios.post(
-        `https://server.paybazaar.in/payout/create`,
+        `${import.meta.env.VITE_API_BASE_URL}/payout/create`,
         payload,
         {
           headers: {
@@ -584,7 +587,6 @@ export default function Settlement() {
                         <TableHead className="font-bold text-white text-center w-[120px] min-w-[120px]">
                           PAY
                         </TableHead>
-                       
                         <TableHead className="font-bold text-white text-center w-[120px] min-w-[120px]">
                           DELETE
                         </TableHead>
@@ -593,7 +595,7 @@ export default function Settlement() {
                     <TableBody>
                       {fetchingBeneficiaries ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-16">
+                          <TableCell colSpan={7} className="text-center py-16">
                             <div className="flex flex-col items-center justify-center">
                               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
                               <p className="text-sm text-muted-foreground">Loading beneficiaries...</p>
@@ -602,7 +604,7 @@ export default function Settlement() {
                         </TableRow>
                       ) : beneficiaries.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-16">
+                          <TableCell colSpan={7} className="text-center py-16">
                             <div className="flex flex-col items-center justify-center">
                               <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-muted mb-4">
                                 <Eye className="h-10 w-10 text-muted-foreground" />
@@ -637,20 +639,18 @@ export default function Settlement() {
                               {beneficiary.account_number}
                             </TableCell>
                             <TableCell className="text-center py-4 font-mono">
-                              {beneficiary.phone || beneficiary.mobile_number}
+                              {beneficiary.beneficiary_phone || beneficiary.mobile_number}
                             </TableCell>
                             <TableCell className="text-center py-4">
                               <Button
                                 size="sm"
                                 onClick={() => handlePayClick(beneficiary)}
                                 className="paybazaar-gradient text-white hover:opacity-90 shadow-md"
-                            
                               >
                                 <Eye className="h-4 w-4 mr-1" />
                                 Pay
                               </Button>
                             </TableCell>
-                           
                             <TableCell className="text-center py-4">
                               <Button
                                 size="sm"
