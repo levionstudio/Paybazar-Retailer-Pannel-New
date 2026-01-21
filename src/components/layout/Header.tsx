@@ -94,7 +94,7 @@ export function Header() {
         const token = localStorage.getItem("authToken");
 
         const res = await axios.get(
-          `https://paybazaar-new.onrender.com/wallet/get/balance/retailer/${userId}`,
+          import.meta.env.VITE_API_BASE_URL + "/wallet/get/balance/retailer/${userId}",
           {
             headers: {
               Authorization: `Bearer ${token}`,

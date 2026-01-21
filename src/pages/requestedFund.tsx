@@ -197,7 +197,7 @@ const GetFundRequests = () => {
       }
 
       const { data } = await axios.post(
-        "http://localhost:8080/fund_request/get/requester",
+       import.meta.env.VITE_API_BASE_URL + "/fund_request/get/requester",
         payload,
         {
           headers: {

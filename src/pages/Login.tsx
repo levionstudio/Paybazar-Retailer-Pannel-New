@@ -66,7 +66,7 @@ export default function Login() {
     setIsLoading(true);
     try {
       const response = await axios.post(
-        "http://localhost:8080/retailer/login",
+        import.meta.env.VITE_API_BASE_URL + "/retailer/login",
         {
           retailer_id: data.retailer_id,
           retailer_password: data.retailer_password,
