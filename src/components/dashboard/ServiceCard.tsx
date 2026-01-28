@@ -4,20 +4,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ServiceCardProps {
   title: string;
   icon: LucideIcon;
-  status: "active" | "inactive" | "maintenance";
   description: string;
   stats: {
     label: string;
     value: string;
   }[];
-  onManage?: () => void;
 }
 
 export function ServiceCard({
@@ -25,13 +22,12 @@ export function ServiceCard({
   icon: Icon,
   description,
   stats,
-  onManage,
 }: ServiceCardProps) {
   return (
     <Card
       className={cn(
-        "finance-card group",
-        "h-full flex flex-col" // 🔥 IMPORTANT
+        "finance-card",
+        "h-full flex flex-col"
       )}
     >
       {/* HEADER */}
@@ -54,8 +50,7 @@ export function ServiceCard({
 
       {/* CONTENT */}
       <CardContent className="pt-0 flex flex-col flex-1">
-        {/* STATS */}
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-2 gap-4">
           {stats.map((stat, index) => (
             <div key={index} className="text-center">
               <p className="text-2xl font-bold text-primary">
@@ -67,18 +62,6 @@ export function ServiceCard({
             </div>
           ))}
         </div>
-
-        {/* BUTTON PUSHED TO BOTTOM */}
-        {onManage && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onManage}
-            className="mt-auto w-full hover:bg-primary hover:text-primary-foreground transition-colors"
-          >
-            Manage Service
-          </Button>
-        )}
       </CardContent>
     </Card>
   );

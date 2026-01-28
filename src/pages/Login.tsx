@@ -95,7 +95,7 @@ export default function Login() {
         title: "Login Failed",
         description:
           error.response?.data?.message ||
-          "Invalid phone number or password.",
+          "Invalid Retailer ID or Password",
         variant: "destructive",
       });
     } finally {

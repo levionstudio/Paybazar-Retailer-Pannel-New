@@ -526,37 +526,63 @@ export default function ServiceReportSettlement() {
     }
   };
 
-  const handlePrintReceipt = () => {
-    if (!receiptRef.current) return;
+const handlePrintReceipt = () => {
+  if (!receiptRef.current) return;
 
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return;
 
-    const receiptContent = receiptRef.current.innerHTML;
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Receipt</title>
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              margin: 20px;
-              background: white;
+  // Use OUTER HTML so wrapper styles are preserved
+  const receiptHTML = receiptRef.current.outerHTML;
+
+  printWindow.document.open();
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Receipt</title>
+
+        <!-- Tailwind CSS (required for same styling as UI/PDF) -->
+        <script src="https://cdn.tailwindcss.com"></script>
+
+        <style>
+          body {
+            background: white;
+            margin: 0;
+            padding: 20px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          @page {
+            size: A4;
+            margin: 15mm;
+          }
+
+          @media print {
+            body {
+              margin: 0;
             }
-            @media print {
-              body { margin: 0; }
-            }
-          </style>
-        </head>
-        <body>
-          ${receiptContent}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-  };
+          }
+        </style>
+      </head>
+      <body>
+        ${receiptHTML}
+
+        <script>
+          window.onload = () => {
+            window.focus();
+            window.print();
+            window.close();
+          };
+        </script>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+};
+
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
@@ -939,7 +965,7 @@ export default function ServiceReportSettlement() {
                 <h2 className="text-2xl font-bold text-gray-800">
                    RECEIPT
                 </h2>
-                <p className="text-sm text-gray-600 mt-2">
+                <p className="text-sm text-black font-bold">
                   Paybazaar Technologies Pvt. Ltd.
                 </p>
               </div>
@@ -947,7 +973,7 @@ export default function ServiceReportSettlement() {
               {/* Transaction Status */}
               <div className="space-y-3">
                 <div className="text-center">
-                  <p className="text-xs text-gray-500 mb-1">Transaction ID</p>
+                  <p className="text-xs text-black mb-1">Transaction ID</p>
                   <p className="font-mono text-sm font-semibold">
                     {selectedTransaction.operator_transaction_id}
                   </p>
@@ -966,81 +992,81 @@ export default function ServiceReportSettlement() {
 
               {/* Transaction Details */}
               <div className="space-y-4">
-                <h3 className="font-semibold text-gray-800 pb-2 border-b">
+                <h3 className="font-semibold text-black pb-2 border-b">
                   Transaction Details
                 </h3>
 
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-gray-500">Date & Time</p>
+                    <p className="text-black">Date & Time</p>
                     <p className="font-medium">
                       {formatDate(selectedTransaction.created_at)}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-gray-500">Transfer Type</p>
+                    <p className="text-black">Transfer Type</p>
                     <p className="font-medium">
                       {getTransferTypeName(selectedTransaction.transfer_type)}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-gray-500">Phone Number</p>
+                    <p className="text-black">Phone Number</p>
                     <p className="font-medium">
                       {selectedTransaction.mobile_number}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-gray-500">Bank Name</p>
+                    <p className="text-black">Bank Name</p>
                     <p className="font-medium">
                       {selectedTransaction.beneficiary_bank_name}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-gray-500">Beneficiary Name</p>
+                    <p className="text-black">Beneficiary Name</p>
                     <p className="font-medium">
                       {selectedTransaction.beneficiary_name}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-gray-500">Account Number</p>
+                    <p className="text-black">Account Number</p>
                     <p className="font-medium font-mono">
                       {selectedTransaction.beneficiary_account_number}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-gray-500">IFSC Code</p>
+                    <p className="text-black">IFSC Code</p>
                     <p className="font-medium font-mono">
                       {selectedTransaction.beneficiary_ifsc_code}
                     </p>
                   </div>
 
-                  {selectedTransaction.order_id && (
+                  {/* {selectedTransaction.order_id && (
                     <div>
                       <p className="text-gray-500">Order ID</p>
                       <p className="font-medium font-mono">
                         {selectedTransaction.order_id}
                       </p>
                     </div>
-                  )}
+                  )} */}
                 </div>
               </div>
 
               {/* Amount Details */}
               <div className="space-y-4">
-                <h3 className="font-semibold text-gray-800 pb-2 border-b">
+                <h3 className="font-semibold text-black pb-2 border-b">
                   Amount Details
                 </h3>
 
                 <div className="space-y-3">
                   <div className="flex justify-between items-center py-3 border-b">
-                    <span className="text-gray-600 font-medium">Transfer Amount</span>
-                    <span className="font-bold text-2xl text-gray-900">
+                    <span className="text-black font-medium">Transfer Amount</span>
+                    <span className="font-bold text-2xl text-black">
                       ₹{formatAmount(selectedTransaction.amount)}
                     </span>
                   </div>
@@ -1053,9 +1079,27 @@ export default function ServiceReportSettlement() {
                   This is a computer-generated receipt and does not require a
                   signature.
                 </p>
-                <p className="text-xs text-gray-500">
-                  For any queries, please contact customer support.
-                </p>
+                           <p className="text-xs text-gray-500">
+  For any technical queries, contact{" "}
+  <a
+    href="https://www.gvinfotech.org"
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-blue-600 underline hover:text-blue-800"
+  >
+    www.gvinfotech.org
+  </a>{" "}
+  or{" "}
+  <a
+    href="https://www.paybazaar.in"
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-blue-600 underline hover:text-blue-800"
+  >
+    www.paybazaar.in
+  </a>
+</p>
+
               </div>
             </div>
           )}
