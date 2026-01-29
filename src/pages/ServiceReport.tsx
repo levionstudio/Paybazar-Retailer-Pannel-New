@@ -81,7 +81,7 @@ export default function ServiceReport() {
       description: "Recharge prepaid and DTH connections",
       color: "bg-gradient-to-r from-orange-500 to-orange-400",
       category: "Recharge",
-      route: "/mobile-recharge",
+      route: "/service/recharge/report",
     },
        {
       id: "ticket-booking",

@@ -112,7 +112,7 @@ const MobileRecharge = () => {
   const [rechargeHistory, setRechargeHistory] = useState<RechargeHistory[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  // Recharge form state
+  // Recharge form state (removed rechargeType since it's always prepaid)
   const [rechargeForm, setRechargeForm] = useState({
     mobileNumber: "",
     operatorCode: "",
@@ -120,7 +120,6 @@ const MobileRecharge = () => {
     circleCode: "",
     circleName: "",
     amount: "",
-    rechargeType: "prepaid",
   });
 
   // Extract retailer ID from JWT token
@@ -161,7 +160,7 @@ const MobileRecharge = () => {
     }
   }, [toast]);
 
-  // Fetch operators
+  // Fetch operators (filtered for prepaid only)
   useEffect(() => {
     const fetchOperators = async () => {
       setIsLoadingOperators(true);
@@ -175,13 +174,20 @@ const MobileRecharge = () => {
         const operatorsData = response.data?.data?.operators || [];
         
         console.log("Operators response:", response.data);
-        console.log("Processed operators:", operatorsData);
+        console.log("Raw operators:", operatorsData);
         
         if (!Array.isArray(operatorsData)) {
           throw new Error("Invalid response format");
         }
         
-        setOperators(operatorsData);
+        // Filter out postpaid operators (only keep prepaid)
+        const prepaidOperators = operatorsData.filter((operator: Operator) => {
+          const operatorName = operator.operator_name.toLowerCase();
+          return !operatorName.includes('postpaid');
+        });
+        
+        console.log("Prepaid operators:", prepaidOperators);
+        setOperators(prepaidOperators);
       } catch (error: any) {
         console.error("Error fetching operators:", error);
         setOperators([]); // Set to empty array on error
@@ -500,7 +506,7 @@ const MobileRecharge = () => {
           amount: amount,
           circle_code: parseInt(rechargeForm.circleCode),
           circle_name: rechargeForm.circleName,
-          recharge_type: rechargeForm.rechargeType,
+          recharge_type: "1", // Always "1" for prepaid
           partner_request_id: `REQ_${Date.now()}`,
           commision: 0,
           status: "pending",
@@ -525,7 +531,6 @@ const MobileRecharge = () => {
           circleCode: "",
           circleName: "",
           amount: "",
-          rechargeType: "prepaid",
         });
 
         // Refresh history
@@ -793,51 +798,6 @@ const MobileRecharge = () => {
                           Minimum recharge amount is ₹10
                         </p>
                       )}
-                  </div>
-
-                  {/* Recharge Type */}
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-foreground">
-                      Recharge Type
-                    </Label>
-                    <div className="flex gap-4">
-                      <Button
-                        type="button"
-                        variant={
-                          rechargeForm.rechargeType === "prepaid"
-                            ? "default"
-                            : "outline"
-                        }
-                        onClick={() =>
-                          setRechargeForm({
-                            ...rechargeForm,
-                            rechargeType: "prepaid",
-                          })
-                        }
-                        disabled={isLoading}
-                        className="flex-1 h-12"
-                      >
-                        Prepaid
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={
-                          rechargeForm.rechargeType === "postpaid"
-                            ? "default"
-                            : "outline"
-                        }
-                        onClick={() =>
-                          setRechargeForm({
-                            ...rechargeForm,
-                            rechargeType: "postpaid",
-                          })
-                        }
-                        disabled={isLoading}
-                        className="flex-1 h-12"
-                      >
-                        Postpaid
-                      </Button>
-                    </div>
                   </div>
 
                   {/* Information Box */}

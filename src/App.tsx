@@ -35,6 +35,7 @@ import MyDocuments from "./pages/Documents";
 import MyTickets from "./pages/Tickets";
 import TDSCommissionPage from "./pages/Tds";
 import MobileRecharge from "./pages/MobileRecharge";
+import MobileRechargeReport from "./pages/ServiceReportRechargePrepaid";
 
 const queryClient = new QueryClient();
 
@@ -61,6 +62,7 @@ const App = () => (
               <Route path="/documents" element={<MyDocuments />} />
               <Route path="/recharge" element={<UtilityPayments />} />
               <Route path ="/mobile-recharge" element={<MobileRecharge />} />
+              <Route path ="/service/recharge/report" element={<MobileRechargeReport />} />
               <Route path="/aeps" element={<AePS />} />
               <Route path="/aeps2" element={<AepsKyc />} />
               <Route path="/digikatha" element={<DigiKatha />} />
