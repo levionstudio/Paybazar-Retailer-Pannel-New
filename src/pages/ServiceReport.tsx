@@ -77,7 +77,7 @@ export default function ServiceReport() {
       title: "RECHARGE",
       subtitle: "Mobile & DTH Recharge",
       icon: Smartphone,
-         status: "coming-soon",
+         status: "active",
       description: "Recharge prepaid and DTH connections",
       color: "bg-gradient-to-r from-orange-500 to-orange-400",
       category: "Recharge",

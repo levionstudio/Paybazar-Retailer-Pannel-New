@@ -94,6 +94,7 @@ const utilityServices = [
     totalBillers: 365,
     category: "Internet & TV",
     color: "from-blue-500 to-blue-600",
+    route: "/broadband",
   },
   {
     id: 2,
@@ -102,6 +103,7 @@ const utilityServices = [
     totalBillers: 56,
     category: "Internet & TV",
     color: "from-purple-500 to-purple-600",
+    route: "/cable-tv",
   },
   {
     id: 3,
@@ -110,6 +112,7 @@ const utilityServices = [
     totalBillers: 30,
     category: "Financial",
     color: "from-indigo-500 to-indigo-600",
+    route: "/credit-card",
   },
   {
     id: 4,
@@ -118,6 +121,7 @@ const utilityServices = [
     totalBillers: 68,
     category: "Charity",
     color: "from-red-500 to-red-600",
+    route: "/donation",
   },
   {
     id: 5,
@@ -126,6 +130,7 @@ const utilityServices = [
     totalBillers: 11,
     category: "Internet & TV",
     color: "from-slate-500 to-slate-600",
+    route: "/dth",
   },
   {
     id: 6,
@@ -134,6 +139,7 @@ const utilityServices = [
     totalBillers: 38995,
     category: "Education",
     color: "from-green-500 to-green-600",
+    route: "/education-fee",
   },
   {
     id: 7,
@@ -142,6 +148,7 @@ const utilityServices = [
     totalBillers: 26,
     category: "Lifestyle",
     color: "from-purple-500 to-purple-600",
+    route: "/clubs-associations",
   },
   {
     id: 8,
@@ -150,6 +157,7 @@ const utilityServices = [
     totalBillers: 116,
     category: "Utilities",
     color: "from-yellow-500 to-yellow-600",
+    route: "/electricity",
   },
   {
     id: 9,
@@ -158,6 +166,7 @@ const utilityServices = [
     totalBillers: 7,
     category: "Utilities",
     color: "from-yellow-400 to-yellow-500",
+    route: "/electricity-prepaid",
   },
   {
     id: 10,
@@ -166,6 +175,7 @@ const utilityServices = [
     totalBillers: 27,
     category: "Transport",
     color: "from-blue-500 to-blue-600",
+    route: "/fastag-recharge",
   },
   {
     id: 11,
@@ -174,6 +184,7 @@ const utilityServices = [
     totalBillers: 4,
     category: "Utilities",
     color: "from-orange-500 to-orange-600",
+    route: "/gas-lpg",
   },
   {
     id: 12,
@@ -182,6 +193,7 @@ const utilityServices = [
     totalBillers: 38,
     category: "Utilities",
     color: "from-orange-600 to-orange-700",
+    route: "/gas-png",
   },
   {
     id: 13,
@@ -190,6 +202,7 @@ const utilityServices = [
     totalBillers: 24,
     category: "Healthcare",
     color: "from-teal-500 to-teal-600",
+    route: "/hospitals-pathology",
   },
   {
     id: 14,
@@ -198,6 +211,7 @@ const utilityServices = [
     totalBillers: 286,
     category: "Housing",
     color: "from-gray-500 to-gray-600",
+    route: "/housing-society",
   },
   {
     id: 15,
@@ -206,6 +220,7 @@ const utilityServices = [
     totalBillers: 74,
     category: "Insurance",
     color: "from-indigo-500 to-indigo-600",
+    route: "/insurance",
   },
   {
     id: 16,
@@ -214,6 +229,7 @@ const utilityServices = [
     totalBillers: 10,
     category: "Communication",
     color: "from-gray-500 to-gray-600",
+    route: "/landline",
   },
   {
     id: 17,
@@ -222,6 +238,7 @@ const utilityServices = [
     totalBillers: 450,
     category: "Financial",
     color: "from-green-500 to-green-600",
+    route: "/loan-emi",
   },
   {
     id: 18,
@@ -230,6 +247,7 @@ const utilityServices = [
     totalBillers: 14,
     category: "Mobile",
     color: "from-blue-500 to-blue-600",
+    route: "/mobile-postpaid",
   },
   {
     id: 19,
@@ -238,6 +256,7 @@ const utilityServices = [
     totalBillers: 8,
     category: "Mobile",
     color: "from-cyan-500 to-cyan-600",
+    route: "/mobile-recharge", // This is the mobile recharge route
   },
   {
     id: 20,
@@ -246,6 +265,7 @@ const utilityServices = [
     totalBillers: 94,
     category: "Government",
     color: "from-purple-500 to-purple-600",
+    route: "/municipal-taxes",
   },
   {
     id: 21,
@@ -254,6 +274,7 @@ const utilityServices = [
     totalBillers: 1,
     category: "Financial",
     color: "from-emerald-500 to-emerald-600",
+    route: "/nps",
   },
   {
     id: 22,
@@ -262,6 +283,7 @@ const utilityServices = [
     totalBillers: 3,
     category: "Transport",
     color: "from-blue-400 to-blue-500",
+    route: "/ncmc-recharge",
   },
   {
     id: 23,
@@ -270,6 +292,7 @@ const utilityServices = [
     totalBillers: 46,
     category: "Financial",
     color: "from-violet-500 to-violet-600",
+    route: "/recurring-deposit",
   },
   {
     id: 24,
@@ -278,6 +301,7 @@ const utilityServices = [
     totalBillers: 18,
     category: "Housing",
     color: "from-amber-500 to-amber-600",
+    route: "/rental",
   },
   {
     id: 25,
@@ -286,6 +310,7 @@ const utilityServices = [
     totalBillers: 37,
     category: "Entertainment",
     color: "from-indigo-500 to-indigo-600",
+    route: "/subscription",
   },
   {
     id: 26,
@@ -294,6 +319,7 @@ const utilityServices = [
     totalBillers: 70,
     category: "Utilities",
     color: "from-blue-400 to-blue-500",
+    route: "/water",
   },
 ];
 
@@ -331,6 +357,14 @@ export default function UtilityPayments() {
 
   const handleServiceClick = (service: (typeof utilityServices)[0]) => {
     console.log("Selected service:", service.name);
+    
+    // Navigate to the service route
+    if (service.route) {
+      navigate(service.route);
+    } else {
+      // If no route is defined, show a toast or message
+      console.log(`Route not configured for ${service.name}`);
+    }
   };
 
   return (
@@ -356,17 +390,17 @@ export default function UtilityPayments() {
               </h1>
             </div>
 
-                    {/* Modern Search Bar */}
-                  <div className="relative max-w-lg">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-5 w-5 z-10" />
-          <Input
-            placeholder="Search utilities..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-12 h-12 bg-background/95 backdrop-blur-sm border border-border text-foreground placeholder:text-muted-foreground rounded-lg shadow-sm"
-          />
-        </div>
-         </div>
+            {/* Modern Search Bar */}
+            <div className="relative max-w-lg">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-5 w-5 z-10" />
+              <Input
+                placeholder="Search utilities..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-12 h-12 bg-background/95 backdrop-blur-sm border border-border text-foreground placeholder:text-muted-foreground rounded-lg shadow-sm"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="max-w-7xl mx-auto p-6">
@@ -492,21 +526,19 @@ export default function UtilityPayments() {
                         <td className="p-4 text-sm text-center text-foreground">
                           {transaction.customerName}
                         </td>
-                      <td className="p-4">
-                        <Badge
-                          className={`w-24 h-7 flex text-center items-center justify-center text-xs rounded-full font-medium ${
-                            transaction.status === "Success"
-                              ? "bg-green-100 text-green-700 hover:bg-green-100"
-                              : transaction.status === "Pending"
-                              ? "bg-amber-100 text-amber-700 hover:bg-amber-100" 
-                              : "bg-red-100 text-red-700 hover:bg-red-100"
-                          }`}
-                        >
-                          {transaction.status}
-                        </Badge>
-                      </td>
-
-
+                        <td className="p-4">
+                          <Badge
+                            className={`w-24 h-7 flex text-center items-center justify-center text-xs rounded-full font-medium ${
+                              transaction.status === "Success"
+                                ? "bg-green-100 text-green-700 hover:bg-green-100"
+                                : transaction.status === "Pending"
+                                ? "bg-amber-100 text-amber-700 hover:bg-amber-100"
+                                : "bg-red-100 text-red-700 hover:bg-red-100"
+                            }`}
+                          >
+                            {transaction.status}
+                          </Badge>
+                        </td>
 
                         <td className="p-4">
                           <div className="flex gap-2">

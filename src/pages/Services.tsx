@@ -76,7 +76,7 @@ export default function Services() {
       description: "Recharge prepaid and DTH connections",
       color: "bg-gradient-to-r from-orange-500 to-orange-400",
       category: "Recharge",
-      route: "/mobile-recharge",
+      route: "/recharge",
     },
      {
       id: "ticket-booking",
