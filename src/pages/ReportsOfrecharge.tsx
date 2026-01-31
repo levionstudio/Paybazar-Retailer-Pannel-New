@@ -2,114 +2,42 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  FileText,
-  TrendingUp,
-  Wallet,
-  ArrowLeftRight,
   Search,
-  BarChart3,
-  Receipt,
-  Landmark,
-  Fingerprint,
   Smartphone,
-  BusIcon,
-  IndianRupee,
+  Tv,
 } from "lucide-react";
 import { useState } from "react";
 import { Header } from "@/components/layout/Header";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { useNavigate } from "react-router-dom";
 
-export default function ServiceReport() {
+export default function RechargeReports() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
 
   const reports = [
-   {
-      id: "payout",
-      title: "SETTLEMENT",
-      subtitle: "Instant Settlement",
-      icon: Landmark,
-      status: "active",
-      description: "Send settlement instantly to bank",
-      color: "bg-gradient-to-r from-purple-600 to-purple-400",
-      category: "Settlement",
-      route: "/service/settlement/report",
-    },
-    {
-      id: "dmt-1",
-      title: "DMT",
-      subtitle: "Domestic Money Transfer",
-      icon: ArrowLeftRight,
-        status: "coming-soon",
-      description: "Send money across India instantly",
-      color: "bg-gradient-to-r from-indigo-600 to-indigo-400",
-      category: "Transfer",
-      route: "/service/report",
-    },
-
-      {
-      
-      id: "aeps1",
-      title: "AEPS",
-      subtitle: "Aadhaar Enabled Payment",
-      icon: Fingerprint,
-         status: "coming-soon",
-      description: "Withdraw cash using Aadhaar authentication",
-      color: "bg-gradient-to-r from-blue-600 to-blue-400",
-      category: "Banking",
-      route: "/aeps",
-    },
-    {
-      id: "utilities-bill",
-      title: "BBPS",
-      subtitle: "Bill Payment Services",
-      icon: FileText,
-         status: "coming-soon",
-      description: "Pay electricity, water, gas bills",
-      color: "bg-gradient-to-r from-emerald-600 to-emerald-400",
-      category: "Bills",
-      route: "/utility-payments",
-    },
     {
       id: "mobile-recharge",
-      title: "RECHARGE",
-      subtitle: "Mobile & DTH Recharge",
+      title: "MOBILE RECHARGE",
+      subtitle: "Prepaid Mobile Recharge Reports",
       icon: Smartphone,
-         status: "active",
-      description: "Recharge prepaid and DTH connections",
+      status: "active",
+      description: "View mobile recharge transaction history and reports",
       color: "bg-gradient-to-r from-orange-500 to-orange-400",
       category: "Recharge",
-      route: "/service/recharge/all",
+      route: "/service/recharge/report",
     },
-       {
-      id: "ticket-booking",
-      title: "TICKET BOOKING",
-      subtitle: "Flight and Bus Ticket Booking",
-      icon: BusIcon,
-         status: "coming-soon",
-      description: "Book flight and bus tickets",
-      color: "bg-gradient-to-r from-indigo-600 to-indigo-400",
-      category: "Ticket Booking",
-      route: "/service",
-     },
-         {
-  id: "upi",
-  title: "UPI",
-  subtitle: "Universal Payment Interface",
-  icon: IndianRupee,
-         status: "coming-soon",
-  description: "Pay for your purchases using UPI",
-  color: "bg-gradient-to-r from-purple-600 to-purple-400",
-  category: "Upi",
-  route: "/service",
-},
-  ];
-
-  const categories = [
-    "All",
-    ...Array.from(new Set(reports.map((r) => r.category))),
+    {
+      id: "dth-recharge",
+      title: "DTH RECHARGE",
+      subtitle: "DTH Recharge Reports",
+      icon: Tv,
+      status: "active",
+      description: "View DTH recharge transaction history and reports",
+      color: "bg-gradient-to-r from-purple-600 to-purple-400",
+      category: "Recharge",
+      route: "/service/dthrecharge/report",
+    },
   ];
 
   const filteredReports = reports.filter((report) => {
@@ -122,10 +50,7 @@ export default function ServiceReport() {
         searchTerm.toLowerCase()
       );
 
-    const matchesCategory =
-      selectedCategory === "All" || selectedCategory === report.category;
-
-    return matchesSearch && matchesCategory;
+    return matchesSearch;
   });
 
   const handleReportClick = (report: typeof reports[0]) => {
@@ -146,9 +71,9 @@ export default function ServiceReport() {
           {/* HERO SECTION */}
           <div className="paybazaar-gradient p-6 sm:p-8 text-white shadow">
             <div className="max-w-7xl mx-auto">
-              <h1 className="text-2xl sm:text-3xl font-bold">Reports</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold">Recharge Reports</h1>
               <p className="text-white/80 mt-2 text-sm sm:text-lg">
-                Access detailed reports and analytics for your business
+                Access detailed reports for mobile and DTH recharge transactions
               </p>
 
               {/* SEARCH */}
@@ -171,27 +96,6 @@ export default function ServiceReport() {
                     "
                   />
                 </div>
-              </div>
-
-              {/* CATEGORY FILTERS */}
-              <div className="mt-4 flex flex-wrap gap-2">
-                {categories.map((category) => (
-                  <Button
-                    key={category}
-                    variant={
-                      selectedCategory === category ? "secondary" : "ghost"
-                    }
-                    size="sm"
-                    onClick={() => setSelectedCategory(category)}
-                    className={
-                      selectedCategory === category
-                        ? "bg-white hover:bg-white text-primary rounded-full px-4 py-2 h-auto"
-                        : "text-white rounded-full px-4 py-2 h-auto"
-                    }
-                  >
-                    {category}
-                  </Button>
-                ))}
               </div>
             </div>
           </div>

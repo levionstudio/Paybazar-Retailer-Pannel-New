@@ -130,7 +130,7 @@ const utilityServices = [
     totalBillers: 11,
     category: "Internet & TV",
     color: "from-slate-500 to-slate-600",
-    route: "/dth",
+    route: "/dthrecharge",
   },
   // {
   //   id: 6,
@@ -256,7 +256,7 @@ const utilityServices = [
     totalBillers: 8,
     category: "Mobile",
     color: "from-cyan-500 to-cyan-600",
-    route: "/mobile-recharge", // This is the mobile recharge route
+    route: "/mobilerecharge", // This is the mobile recharge route
   },
   // {
   //   id: 20,
