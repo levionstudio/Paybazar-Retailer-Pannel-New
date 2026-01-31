@@ -324,11 +324,11 @@ const DTHRecharge = () => {
       return;
     }
 
-    if (amount < 10) {
+    if (amount < 200) {
       console.error("Amount too low:", amount);
       toast({
         title: "Amount Too Low",
-        description: "Minimum recharge amount is ₹10",
+        description: "Minimum recharge amount is ₹200",
         variant: "destructive",
       });
       return;
@@ -576,7 +576,7 @@ const DTHRecharge = () => {
                             amount: e.target.value,
                           })
                         }
-                        min="10"
+                        min="200"
                         step="1"
                         required
                         disabled={isLoading}
@@ -584,9 +584,9 @@ const DTHRecharge = () => {
                       />
                     </div>
                     {parseFloat(rechargeForm.amount) > 0 &&
-                      parseFloat(rechargeForm.amount) < 10 && (
+                      parseFloat(rechargeForm.amount) < 200 && (
                         <p className="text-xs text-amber-600">
-                          Minimum recharge amount is ₹10
+                          Minimum recharge amount is ₹200
                         </p>
                       )}
                   </div>
