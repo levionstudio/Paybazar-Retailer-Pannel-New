@@ -16,7 +16,7 @@ import UtilityPayments from "./pages/UtilityServices";
 import AePS from "./pages/Aeps";
 import AepsKyc from "./pages/Aeps2";
 import DigiKatha from "./pages/Digikhata";
-import Dmt1 from "./pages/Dmt1";
+import Dmt1 from "./pages/Dmt";
 import Dmt2 from "./pages/Dmt2";
 import ChangePassword from "./pages/ChangePassword";
 import ContactUs from "./pages/ContactUs";
@@ -39,6 +39,7 @@ import MobileRechargeReport from "./pages/ServiceReportRechargePrepaid";
 import DTHRecharge from "./pages/DthRecharge";
 import RechargeReports from "./pages/ReportsOfrecharge";
 import DTHRechargeReport from "./pages/ServiceReportDth";
+import DmtPage from "./pages/Dmt";
 
 const queryClient = new QueryClient();
 
@@ -72,8 +73,7 @@ const App = () => (
               <Route path="/aeps" element={<AePS />} />
               <Route path="/aeps2" element={<AepsKyc />} />
               <Route path="/digikatha" element={<DigiKatha />} />
-              <Route path="/dmt1" element={<Dmt1 />} />
-              <Route path="/dmt2" element={<Dmt2 />} />
+              <Route path="/dmt" element={<DmtPage/>} />
               <Route path="/change-password" element={<ChangePassword />} />
               <Route path="/contact-us" element={<ContactUs />} />
               <Route path="/commission" element={<MyCommission />} />

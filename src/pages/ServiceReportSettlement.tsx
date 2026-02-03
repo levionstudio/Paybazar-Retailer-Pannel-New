@@ -52,21 +52,26 @@ interface TokenData {
   exp: number;
 }
 
+// ✅ CORRECTED: Matches Go backend GetRetailerPayoutTransactionsResponseModel
 interface Transaction {
   payout_transaction_id: string;
+  operator_transaction_id: string | null;
   partner_request_id: string;
-  operator_transaction_id: string;
+  order_id: string | null;
   retailer_id: string;
-  order_id: string;
+  retailer_name: string;
+  retailer_business_name: string;
   mobile_number: string;
-  beneficiary_bank_name: string;
+  bank_name: string;  // ✅ Changed from beneficiary_bank_name
   beneficiary_name: string;
-  beneficiary_account_number: string;
-  beneficiary_ifsc_code: string;
+  account_number: string;  // ✅ Changed from beneficiary_account_number
+  ifsc_code: string;  // ✅ Changed from beneficiary_ifsc_code
   amount: number;
   transfer_type: string;
+  transaction_status: string;  // ✅ Changed from payout_transaction_status
   retailer_commision: number;
-  payout_transaction_status: string;
+  before_balance: number;
+  after_balance: number;
   created_at: string;
   updated_at: string;
 }
@@ -195,14 +200,16 @@ export default function ServiceReportSettlement() {
         }
       );
 
+      console.log("=== Fetch Transactions Response ===");
+      console.log("Response:", response.data);
+      console.log("====================================");
+
+      // ✅ CORRECTED: Backend returns "transactions" not "payout_transactions"
       if (
         response.data?.status === "success" &&
-        Array.isArray(response.data.data?.payout_transactions)
-
+        Array.isArray(response.data.data?.transactions)
       ) {
-        console.log("=== Sorting Transactions ===");
-        console.log("Response:", response.data);
-        const sortedTransactions = response.data.data.payout_transactions.sort(
+        const sortedTransactions = response.data.data.transactions.sort(
           (a: Transaction, b: Transaction) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
@@ -269,13 +276,13 @@ export default function ServiceReportSettlement() {
     
     const searchLower = searchTerm.toLowerCase().trim();
     const searchableFields = [
-      transaction.operator_transaction_id,
+      transaction.operator_transaction_id || "",
       transaction.mobile_number,
-      transaction.beneficiary_bank_name,
+      transaction.bank_name,
       transaction.beneficiary_name,
-      transaction.beneficiary_account_number,
+      transaction.account_number,
       getTransferTypeName(transaction.transfer_type),
-      transaction.payout_transaction_status,
+      transaction.transaction_status,
       transaction.amount.toString(),
       formatDate(transaction.created_at),
     ];
@@ -323,20 +330,21 @@ export default function ServiceReportSettlement() {
         }
       );
 
-      let allData: Transaction[] = response.data?.data?.payout_transactions || [];
+      // ✅ CORRECTED: Backend returns "transactions" not "payout_transactions"
+      let allData: Transaction[] = response.data?.data?.transactions || [];
 
       // Apply search filter
       if (searchTerm.trim()) {
         const searchLower = searchTerm.toLowerCase().trim();
         allData = allData.filter((transaction) => {
           const searchableFields = [
-            transaction.operator_transaction_id,
+            transaction.operator_transaction_id || "",
             transaction.mobile_number,
-            transaction.beneficiary_bank_name,
+            transaction.bank_name,
             transaction.beneficiary_name,
-            transaction.beneficiary_account_number,
+            transaction.account_number,
             getTransferTypeName(transaction.transfer_type),
-            transaction.payout_transaction_status,
+            transaction.transaction_status,
             transaction.amount.toString(),
           ];
           return searchableFields.some((field) =>
@@ -356,16 +364,17 @@ export default function ServiceReportSettlement() {
 
       const exportData = allData.map((tx, index) => ({
         "S.No": index + 1,
-        "Transaction ID": tx.operator_transaction_id  || "-",
+        "Transaction ID": tx.operator_transaction_id || "-",
         "Date & Time": formatDate(tx.created_at),
         "Phone Number": tx.mobile_number,
-        "Bank Name": tx.beneficiary_bank_name,
+        "Bank Name": tx.bank_name,
         "Beneficiary Name": tx.beneficiary_name,
-        "Account Number": tx.beneficiary_account_number,
-        "IFSC Code": tx.beneficiary_ifsc_code,
+        "Account Number": tx.account_number,
+        "IFSC Code": tx.ifsc_code,
         "Amount (₹)": tx.amount.toFixed(2),
         "Transfer Type": getTransferTypeName(tx.transfer_type),
-        Status: tx.payout_transaction_status,
+        "Commission (₹)": tx.retailer_commision.toFixed(2),
+        Status: tx.transaction_status,
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -383,6 +392,7 @@ export default function ServiceReportSettlement() {
         { wch: 15 },
         { wch: 15 },
         { wch: 15 },
+        { wch: 12 },
         { wch: 12 },
       ];
       worksheet["!cols"] = colWidths;
@@ -509,7 +519,7 @@ export default function ServiceReportSettlement() {
         imgHeight * ratio
       );
       pdf.save(
-        `settlement-receipt-${selectedTransaction.operator_transaction_id}.pdf`
+        `settlement-receipt-${selectedTransaction.operator_transaction_id || selectedTransaction.payout_transaction_id}.pdf`
       );
 
       toast({
@@ -526,63 +536,55 @@ export default function ServiceReportSettlement() {
     }
   };
 
-const handlePrintReceipt = () => {
-  if (!receiptRef.current) return;
+  const handlePrintReceipt = () => {
+    if (!receiptRef.current) return;
 
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
 
-  // Use OUTER HTML so wrapper styles are preserved
-  const receiptHTML = receiptRef.current.outerHTML;
+    const receiptHTML = receiptRef.current.outerHTML;
 
-  printWindow.document.open();
-  printWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Receipt</title>
-
-        <!-- Tailwind CSS (required for same styling as UI/PDF) -->
-        <script src="https://cdn.tailwindcss.com"></script>
-
-        <style>
-          body {
-            background: white;
-            margin: 0;
-            padding: 20px;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-
-          @page {
-            size: A4;
-            margin: 15mm;
-          }
-
-          @media print {
+    printWindow.document.open();
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Receipt</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
             body {
+              background: white;
               margin: 0;
+              padding: 20px;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
-          }
-        </style>
-      </head>
-      <body>
-        ${receiptHTML}
+            @page {
+              size: A4;
+              margin: 15mm;
+            }
+            @media print {
+              body {
+                margin: 0;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${receiptHTML}
+          <script>
+            window.onload = () => {
+              window.focus();
+              window.print();
+              window.close();
+            };
+          </script>
+        </body>
+      </html>
+    `);
 
-        <script>
-          window.onload = () => {
-            window.focus();
-            window.print();
-            window.close();
-          };
-        </script>
-      </body>
-    </html>
-  `);
-
-  printWindow.document.close();
-};
-
+    printWindow.document.close();
+  };
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
@@ -776,7 +778,7 @@ const handlePrintReceipt = () => {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-12">
+                      <TableCell colSpan={11} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
                           <p className="text-gray-500">
@@ -787,7 +789,7 @@ const handlePrintReceipt = () => {
                     </TableRow>
                   ) : filteredTransactions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-12">
+                      <TableCell colSpan={11} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <ReceiptIcon className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-500 font-medium">
@@ -811,20 +813,20 @@ const handlePrintReceipt = () => {
                     </TableRow>
                   ) : (
                     filteredTransactions.map((transaction) => (
-                      <TableRow key={transaction.operator_transaction_id}>
+                      <TableRow key={transaction.payout_transaction_id}>
                         <TableCell className="whitespace-nowrap text-center">
                           {formatDate(transaction.created_at)}
                         </TableCell>
                         <TableCell className="font-mono text-xs text-center">
-                          {transaction.operator_transaction_id ||"-"}
+                          {transaction.operator_transaction_id || "-"}
                         </TableCell>
                         <TableCell className="text-center">{transaction.mobile_number}</TableCell>
                         <TableCell className="text-center">
-                          {transaction.beneficiary_bank_name}
+                          {transaction.bank_name}
                         </TableCell>
                         <TableCell className="text-center">{transaction.beneficiary_name}</TableCell>
                         <TableCell className="font-mono text-xs text-center">
-                          {transaction.beneficiary_account_number}
+                          {transaction.account_number}
                         </TableCell>
                         <TableCell className="font-semibold text-center">
                           ₹{formatAmount(transaction.amount)}
@@ -840,10 +842,10 @@ const handlePrintReceipt = () => {
                         <TableCell className="text-center">
                           <span
                             className={`px-2 py-1 text-xs rounded-full ${getStatusColor(
-                              transaction.payout_transaction_status
+                              transaction.transaction_status
                             )}`}
                           >
-                            {transaction.payout_transaction_status}
+                            {transaction.transaction_status}
                           </span>
                         </TableCell>
                         <TableCell className="text-center">
@@ -935,7 +937,7 @@ const handlePrintReceipt = () => {
       <Dialog open={isReceiptOpen} onOpenChange={setIsReceiptOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle> Receipt</DialogTitle>
+            <DialogTitle>Receipt</DialogTitle>
           </DialogHeader>
 
           {/* Action Buttons */}
@@ -963,7 +965,7 @@ const handlePrintReceipt = () => {
               {/* Header */}
               <div className="text-center border-b pb-6">
                 <h2 className="text-2xl font-bold text-gray-800">
-                   RECEIPT
+                  RECEIPT
                 </h2>
                 <p className="text-sm text-black font-bold">
                   Paybazaar Technologies Pvt. Ltd.
@@ -975,17 +977,17 @@ const handlePrintReceipt = () => {
                 <div className="text-center">
                   <p className="text-xs text-black mb-1">Transaction ID</p>
                   <p className="font-mono text-sm font-semibold">
-                    {selectedTransaction.operator_transaction_id}
+                    {selectedTransaction.operator_transaction_id || selectedTransaction.payout_transaction_id}
                   </p>
                 </div>
 
                 <div
                   className={`text-center py-3 rounded-lg border-2 ${getStatusColorForReceipt(
-                    selectedTransaction.payout_transaction_status
+                    selectedTransaction.transaction_status
                   )}`}
                 >
                   <p className="font-bold text-lg uppercase">
-                    {selectedTransaction.payout_transaction_status}
+                    {selectedTransaction.transaction_status}
                   </p>
                 </div>
               </div>
@@ -1021,7 +1023,7 @@ const handlePrintReceipt = () => {
                   <div>
                     <p className="text-black">Bank Name</p>
                     <p className="font-medium">
-                      {selectedTransaction.beneficiary_bank_name}
+                      {selectedTransaction.bank_name}
                     </p>
                   </div>
 
@@ -1035,25 +1037,16 @@ const handlePrintReceipt = () => {
                   <div>
                     <p className="text-black">Account Number</p>
                     <p className="font-medium font-mono">
-                      {selectedTransaction.beneficiary_account_number}
+                      {selectedTransaction.account_number}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-black">IFSC Code</p>
                     <p className="font-medium font-mono">
-                      {selectedTransaction.beneficiary_ifsc_code}
+                      {selectedTransaction.ifsc_code}
                     </p>
                   </div>
-
-                  {/* {selectedTransaction.order_id && (
-                    <div>
-                      <p className="text-gray-500">Order ID</p>
-                      <p className="font-medium font-mono">
-                        {selectedTransaction.order_id}
-                      </p>
-                    </div>
-                  )} */}
                 </div>
               </div>
 
@@ -1079,27 +1072,26 @@ const handlePrintReceipt = () => {
                   This is a computer-generated receipt and does not require a
                   signature.
                 </p>
-                           <p className="text-xs text-gray-500">
-  For any technical queries, contact{" "}
-  <a
-    href="https://www.gvinfotech.org"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="text-blue-600 underline hover:text-blue-800"
-  >
-    www.gvinfotech.org
-  </a>{" "}
-  or{" "}
-  <a
-    href="https://www.paybazaar.in"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="text-blue-600 underline hover:text-blue-800"
-  >
-    www.paybazaar.in
-  </a>
-</p>
-
+                <p className="text-xs text-gray-500">
+                  For any technical queries, contact{" "}
+                  <a
+                    href="https://www.gvinfotech.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 underline hover:text-blue-800"
+                  >
+                    www.gvinfotech.org
+                  </a>{" "}
+                  or{" "}
+                  <a
+                    href="https://www.paybazaar.in"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 underline hover:text-blue-800"
+                  >
+                    www.paybazaar.in
+                  </a>
+                </p>
               </div>
             </div>
           )}

@@ -8,25 +8,27 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 
 interface AddBeneficiaryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAdd?: (data: BeneficiaryFormData) => void;
+  onAdd?: () => void;
   mobileNumber?: string;
-}
-
-interface BeneficiaryFormData {
-  bank: string;
-  ifsc: string;
-  accountNumber: string;
-  beneficiaryName: string;
-  beneficiaryPhone: string;
 }
 
 interface Bank {
@@ -51,35 +53,26 @@ export function AddBeneficiaryDialog({
 }: AddBeneficiaryDialogProps) {
   const { toast } = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState<BeneficiaryFormData>({
-    bank: "",
-    ifsc: "",
-    accountNumber: "",
-    beneficiaryName: "",
-    beneficiaryPhone: "",
-  });
+const [formData, setFormData] = useState({
+  bank: "",
+  ifsc: "",
+  accountNumber: "",
+  beneficiaryName: "",
+  branchName: "", // ✅ NEW
+});
+
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedBankIFSC, setSelectedBankIFSC] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
+  const [showVerifyConfirm, setShowVerifyConfirm] = useState(false);
   const [bankSearchTerm, setBankSearchTerm] = useState("");
   const [isSelectOpen, setIsSelectOpen] = useState(false);
 
-  const getRetailerIdFromToken = (): string => {
-    try {
-      const token = localStorage.getItem("authToken");
-      if (!token) return "";
-      
-      const decoded = jwtDecode<DecodedToken>(token);
-      return decoded.user_id || "";
-    } catch (error) {
-      console.error("Error decoding token:", error);
-      return "";
-    }
-  };
-
+  // Fetch banks on dialog open
   useEffect(() => {
     const fetchBanks = async () => {
       try {
@@ -114,6 +107,7 @@ export function AddBeneficiaryDialog({
     }
   }, [open, toast]);
 
+  // Reset form when dialog closes
   useEffect(() => {
     if (!open) {
       setFormData({
@@ -121,17 +115,139 @@ export function AddBeneficiaryDialog({
         ifsc: "",
         accountNumber: "",
         beneficiaryName: "",
-        beneficiaryPhone: "",
+        branchName: "",
+
       });
       setErrors({});
-      setSelectedBankIFSC("");
       setBankSearchTerm("");
+      setIsVerified(false);
+      setShowVerifyConfirm(false);
     }
   }, [open]);
 
   const filteredBanks = banks.filter((bank) =>
     bank.bank_name.toLowerCase().includes(bankSearchTerm.toLowerCase())
   );
+
+  // Verify Account Handler
+  const handleVerifyAccount = async () => {
+    // Validation
+    if (!formData.accountNumber) {
+      setErrors({ ...errors, accountNumber: "Account number is required" });
+      return;
+    }
+    
+    if (!formData.ifsc) {
+      setErrors({ ...errors, ifsc: "IFSC code is required" });
+      return;
+    }
+
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.ifsc)) {
+      setErrors({ ...errors, ifsc: "Invalid IFSC code format" });
+      return;
+    }
+
+    if (!mobileNumber) {
+      toast({
+        title: "Error",
+        description: "Mobile number not found. Please login again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsVerifying(true);
+    setShowVerifyConfirm(false); // Close confirmation modal
+    const token = localStorage.getItem("authToken");
+
+    try {
+      // Get retailer_id from token
+      const decoded = jwtDecode<DecodedToken>(token || "");
+      const retailerId = decoded.user_id;
+
+      if (!retailerId) {
+        throw new Error("Retailer ID not found. Please login again.");
+      }
+
+      // ✅ CORRECTED: Matches VerifyBeneficiaryRequestModel
+    const payload = {
+  mobile_number: mobileNumber,
+  bank_name: formData.bank,
+  beneficiary_name: formData.beneficiaryName,
+  account_number: formData.accountNumber,
+  ifsc_code: formData.ifsc,
+};
+
+      console.log("=== Verify Beneficiary Payload ===");
+      console.log("Payload:", payload);
+      console.log("==================================");
+
+      // ✅ CORRECTED: Route is /verify/beneficiaries (plural)
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_BASE_URL}/bene/verify/beneficiaries`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("=== Verify Beneficiary Response ===");
+      console.log("Response:", response.data);
+      console.log("===================================");
+
+      if (response.data?.status === "success") {
+        // ✅ CORRECTED: Response structure is { status, message, data: VerifyBeneficiaryDetailsModel }
+const verifyResponse = response.data?.data?.response;
+const verificationData = verifyResponse?.data;
+
+if (verificationData) {
+  setFormData(prev => ({
+    ...prev,
+    beneficiaryName: verificationData.c_name ?? "",
+    bank: verificationData.bank_name ?? prev.bank,
+    branchName: verificationData.branch_name ?? "", // ✅ HERE
+  }));
+
+  setIsVerified(true);
+
+  toast({
+    title: "Success",
+    description: `Account verified: ${verificationData.c_name}`,
+  });
+
+
+
+        } else {
+          setIsVerified(true);
+          toast({
+            title: "Verified",
+            description: "Account details verified",
+          });
+        }
+      } else {
+        toast({
+          title: "Verification Failed",
+          description: response.data?.message || "Unable to verify account",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("=== Verify Beneficiary Error ===");
+      console.error("Error:", error.response?.data);
+      console.error("================================");
+      
+      toast({
+        title: "Verification Error",
+        description: error.response?.data?.message || "Failed to verify account",
+        variant: "destructive",
+      });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -150,13 +266,15 @@ export function AddBeneficiaryDialog({
       newErrors.accountNumber = "Account number must be at least 9 digits";
     }
 
+    if (!isVerified) {
+      newErrors.accountNumber = "Please verify account before submitting";
+    }
+
     if (!formData.beneficiaryName) {
       newErrors.beneficiaryName = "Beneficiary name is required";
     }
 
-    if (!formData.beneficiaryPhone || formData.beneficiaryPhone.length !== 10) {
-      newErrors.beneficiaryPhone = "Valid beneficiary mobile number is required";
-    }
+
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -179,11 +297,6 @@ export function AddBeneficiaryDialog({
     try {
       setIsSubmitting(true);
       const token = localStorage.getItem("authToken");
-      const retailerId = getRetailerIdFromToken();
-
-      if (!retailerId) {
-        throw new Error("Retailer ID not found. Please login again.");
-      }
       
       const payload = {
         mobile_number: mobileNumber,
@@ -220,7 +333,7 @@ export function AddBeneficiaryDialog({
         });
 
         if (onAdd) {
-          onAdd(formData);
+          onAdd();
         }
 
         setFormData({
@@ -228,12 +341,12 @@ export function AddBeneficiaryDialog({
           ifsc: "",
           accountNumber: "",
           beneficiaryName: "",
-          beneficiaryPhone: "",
+          branchName: "",
         });
 
         setErrors({});
-        setSelectedBankIFSC("");
         setBankSearchTerm("");
+        setIsVerified(false);
         onOpenChange(false);
       }
     } catch (error: any) {
@@ -257,23 +370,23 @@ export function AddBeneficiaryDialog({
       ifsc: "",
       accountNumber: "",
       beneficiaryName: "",
-      beneficiaryPhone: "",
+      branchName: "",
     });
     setErrors({});
-    setSelectedBankIFSC("");
     setBankSearchTerm("");
+    setIsVerified(false);
     onOpenChange(false);
   };
 
   const handleBankChange = (bankName: string) => {
     const selectedBank = banks.find((b) => b.bank_name === bankName);
     if (selectedBank) {
-      setSelectedBankIFSC(selectedBank.ifsc_code);
       setFormData({
         ...formData,
         bank: bankName,
-        ifsc: selectedBank.ifsc_code,
+        ifsc: selectedBank.ifsc_code, // Auto-fill IFSC but remains editable
       });
+      setIsVerified(false); // Reset verification when bank changes
     }
   };
 
@@ -285,9 +398,12 @@ export function AddBeneficiaryDialog({
     }
     
     setFormData({ ...formData, ifsc: value });
-    if (selectedBankIFSC && value !== selectedBankIFSC) {
-      setSelectedBankIFSC("");
-    }
+    setIsVerified(false); // Reset verification when IFSC changes
+  };
+
+  const handleAccountNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({ ...formData, accountNumber: e.target.value });
+    setIsVerified(false); // Reset verification when account number changes
   };
 
   return (
@@ -306,7 +422,7 @@ export function AddBeneficiaryDialog({
           {/* Bank Selection */}
           <div className="space-y-2">
             <Label htmlFor="bank" className="text-sm font-medium">
-              Select Bank
+              Select Bank <span className="text-destructive">*</span>
             </Label>
             <div className="relative">
               <Button
@@ -386,17 +502,17 @@ export function AddBeneficiaryDialog({
             )}
           </div>
 
-          {/* IFSC */}
+          {/* IFSC - Editable but auto-filled */}
           <div className="space-y-2">
             <Label htmlFor="ifsc" className="text-sm font-medium">
-              IFSC
+              IFSC Code <span className="text-destructive">*</span>
             </Label>
             <Input
               id="ifsc"
               type="text"
               value={formData.ifsc}
               onChange={handleIFSCChange}
-              placeholder="Enter IFSC"
+              placeholder="Enter or edit IFSC"
               className="uppercase"
               maxLength={11}
             />
@@ -405,30 +521,68 @@ export function AddBeneficiaryDialog({
             )}
           </div>
 
-          {/* Account Number */}
+          {/* Account Number with Verify Button */}
           <div className="space-y-2">
             <Label htmlFor="accountNumber" className="text-sm font-medium">
-              Account Number
+              Account Number <span className="text-destructive">*</span>
             </Label>
-            <Input
-              id="accountNumber"
-              type="number"
-              inputMode="numeric"
-              value={formData.accountNumber}
-              onChange={(e) =>
-                setFormData({ ...formData, accountNumber: e.target.value })
-              }
-              placeholder="Enter Account Number"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="accountNumber"
+                type="text"
+                inputMode="numeric"
+                value={formData.accountNumber}
+                onChange={handleAccountNumberChange}
+                placeholder="Enter Account Number"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                onClick={() => {
+                  // Validate before showing confirmation
+                  if (!formData.accountNumber || !formData.ifsc) {
+                    toast({
+                      title: "Missing Information",
+                      description: "Please enter account number and IFSC code first",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.ifsc)) {
+                    toast({
+                      title: "Invalid IFSC",
+                      description: "Please enter a valid IFSC code",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setShowVerifyConfirm(true);
+                }}
+                disabled={isVerifying || !formData.accountNumber || !formData.ifsc}
+                variant={isVerified ? "default" : "outline"}
+                className={isVerified ? "bg-green-600 hover:bg-green-700" : ""}
+              >
+                {isVerifying ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Verifying
+                  </>
+                ) : isVerified ? (
+                  "Verified ✓"
+                ) : (
+                  "Verify"
+                )}
+              </Button>
+            </div>
             {errors.accountNumber && (
               <p className="text-red-500 text-xs">{errors.accountNumber}</p>
             )}
           </div>
 
-          {/* Beneficiary Name */}
+          {/* Beneficiary Name - Auto-filled from verification */}
           <div className="space-y-2">
             <Label htmlFor="beneficiaryName" className="text-sm font-medium">
-              Beneficiary Name
+              Beneficiary Name <span className="text-destructive">*</span>
             </Label>
             <Input
               id="beneficiaryName"
@@ -437,36 +591,30 @@ export function AddBeneficiaryDialog({
               onChange={(e) =>
                 setFormData({ ...formData, beneficiaryName: e.target.value })
               }
-              placeholder="Enter Beneficiary Name"
+              placeholder="Will auto-fill after verification"
+              className={isVerified ? "bg-green-50 border-green-300" : ""}
             />
             {errors.beneficiaryName && (
               <p className="text-red-500 text-xs">{errors.beneficiaryName}</p>
             )}
           </div>
 
-          {/* Beneficiary Phone */}
-          <div className="space-y-2">
-            <Label htmlFor="beneficiaryPhone" className="text-sm font-medium">
-              Beneficiary Mobile Number
-            </Label>
-            <Input
-              id="beneficiaryPhone"
-              type="tel"
-              inputMode="numeric"
-              maxLength={10}
-              value={formData.beneficiaryPhone}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  beneficiaryPhone: e.target.value.replace(/\D/g, "").slice(0, 10),
-                })
-              }
-              placeholder="Enter Beneficiary Mobile Number"
-            />
-            {errors.beneficiaryPhone && (
-              <p className="text-red-500 text-xs">{errors.beneficiaryPhone}</p>
-            )}
-          </div>
+          {/* Beneficiary Branch Name - Auto-filled from verification */}
+      {/* Branch Name - Auto-filled */}
+<div className="space-y-2">
+  <Label htmlFor="branchName" className="text-sm font-medium">
+    Branch Name
+  </Label>
+  <Input
+    id="branchName"
+    type="text"
+    value={formData.branchName}
+    readOnly
+    className="bg-green-50 border-green-300"
+    placeholder="Will auto-fill after verification"
+  />
+</div>
+
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3 pt-4">
@@ -475,19 +623,74 @@ export function AddBeneficiaryDialog({
               onClick={handleCancel}
               variant="outline"
               className="flex-1"
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
             <Button
               type="submit"
               className="flex-1 paybazaar-gradient text-white"
-              disabled={isSubmitting || loading}
+              disabled={isSubmitting || loading || !isVerified}
             >
-              {isSubmitting ? "Submitting..." : "Submit"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                "Submit"
+              )}
             </Button>
           </div>
         </form>
       </DialogContent>
+
+      {/* Verification Confirmation Modal */}
+      <AlertDialog open={showVerifyConfirm} onOpenChange={setShowVerifyConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Account Verification</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p className="text-base">
+                Account verification will cost <span className="font-bold text-red-600">₹3.00</span> and will be deducted from your wallet balance.
+              </p>
+              <div className="bg-muted p-4 rounded-lg border mt-4">
+                <p className="text-sm font-semibold mb-2">Verification Details:</p>
+                <div className="space-y-1 text-sm">
+                  <p>
+                    <span className="text-muted-foreground">Account Number:</span>{" "}
+                    <span className="font-mono font-medium">{formData.accountNumber}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">IFSC Code:</span>{" "}
+                    <span className="font-mono font-medium">{formData.ifsc}</span>
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground mt-3">
+                Do you want to proceed with the verification?
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isVerifying}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleVerifyAccount}
+              disabled={isVerifying}
+              className="bg-primary hover:bg-primary/90"
+            >
+              {isVerifying ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                "Yes, Verify (₹3)"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

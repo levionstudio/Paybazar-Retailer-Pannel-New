@@ -165,13 +165,13 @@ export default function Settlement() {
     if (showSuccessAnimation && transactionId) {
       const timer = setTimeout(() => {
         setShowSuccessAnimation(false);
-        localStorage.setItem('autoOpenReceipt', transactionId);
-        navigate('/reports', { state: { openReceiptFor: transactionId } });
+        // Stay on the current page - beneficiaries list remains visible
+        // Transaction list refreshes automatically in submitPayout
       }, 3500);
 
       return () => clearTimeout(timer);
     }
-  }, [showSuccessAnimation, transactionId, navigate]);
+  }, [showSuccessAnimation, transactionId]);
 
   const handleLogin = async () => {
     if (!payoutPhoneNumber) {
@@ -348,16 +348,17 @@ export default function Settlement() {
         return;
       }
       
+      // ✅ CORRECTED PAYLOAD - Matches backend CreatePayoutRequestModel exactly
       const payload = {
         admin_id: tokenData.admin_id,
         retailer_id: tokenData.user_id,
         mobile_number: selectedBeneficiary.mobile_number,
-        beneficiary_bank_name: selectedBeneficiary.bank_name,
+        ifsc_code: selectedBeneficiary.ifsc_code,  // ✅ Changed from beneficiary_ifsc_code
+        bank_name: selectedBeneficiary.bank_name,  // ✅ Changed from beneficiary_bank_name
+        account_number: selectedBeneficiary.account_number,  // ✅ Changed from beneficiary_account_number
         beneficiary_name: selectedBeneficiary.beneficiary_name,
-        beneficiary_account_number: selectedBeneficiary.account_number,
-        beneficiary_ifsc_code: selectedBeneficiary.ifsc_code,
         amount: parseFloat(payFormData.amount),
-        transfer_type: payFormData.transactionType,
+        transfer_type: parseInt(payFormData.transactionType),  // ✅ Convert to int (5=IMPS, 6=NEFT)
         mpin: parseInt(verifiedMpin),
       };
 

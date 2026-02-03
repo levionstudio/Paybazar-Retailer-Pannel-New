@@ -41,7 +41,7 @@ export default function Services() {
       description: "Send money across India instantly",
       color: "bg-gradient-to-r from-indigo-600 to-indigo-400",
       category: "Transfer",
-      route: "/dmt1",
+      route: "/dmt",
     },
     {
       
