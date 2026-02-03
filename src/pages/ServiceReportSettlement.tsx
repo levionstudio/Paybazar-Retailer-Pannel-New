@@ -769,6 +769,8 @@ export default function ServiceReportSettlement() {
                     <TableHead className="text-center whitespace-nowrap">BENEFICIARY</TableHead>
                     <TableHead className="text-center whitespace-nowrap">ACCOUNT NO.</TableHead>
                     <TableHead className="text-center whitespace-nowrap">AMOUNT (₹)</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">BEFORE BAL (₹)</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">AFTER BAL (₹)</TableHead>
                     <TableHead className="text-center whitespace-nowrap">TYPE</TableHead>
                     <TableHead className="text-center whitespace-nowrap">COMMISSION (₹)</TableHead>
                     <TableHead className="text-center whitespace-nowrap">STATUS</TableHead>
@@ -830,6 +832,12 @@ export default function ServiceReportSettlement() {
                         </TableCell>
                         <TableCell className="font-semibold text-center">
                           ₹{formatAmount(transaction.amount)}
+                        </TableCell>
+                        <TableCell className="text-center font-semibold">
+                          ₹{formatAmount(transaction.before_balance)}
+                        </TableCell>
+                        <TableCell className="text-center font-semibold">
+                          ₹{formatAmount(transaction.after_balance)}
                         </TableCell>
                         <TableCell className="text-center">
                           <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">

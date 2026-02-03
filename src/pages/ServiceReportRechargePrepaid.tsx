@@ -58,6 +58,8 @@ interface MobileRechargeTransaction {
   circle_code: number;
   circle_name: string;
   amount: number;
+  before_balance: number;
+  after_balance: number;
   commision: number;
   recharge_type: string;
   status: string;
@@ -738,6 +740,12 @@ export default function MobileRechargeReport() {
                       AMOUNT (₹)
                     </TableHead>
                     <TableHead className="text-center whitespace-nowrap">
+                      BEFORE BAL (₹)
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
+                      AFTER BAL (₹)
+                    </TableHead>
+                    <TableHead className="text-center whitespace-nowrap">
                       COMMISSION (₹)
                     </TableHead>
                     <TableHead className="text-center whitespace-nowrap">
@@ -810,6 +818,12 @@ export default function MobileRechargeReport() {
                         </TableCell>
                         <TableCell className="font-semibold text-center">
                           ₹{formatAmount(transaction.amount)}
+                        </TableCell>
+                        <TableCell className="text-center font-semibold">
+                          ₹{formatAmount(transaction.before_balance)}
+                        </TableCell>
+                        <TableCell className="text-center font-semibold">
+                          ₹{formatAmount(transaction.after_balance)}
                         </TableCell>
                         <TableCell className="text-center font-semibold text-green-600">
                           ₹{formatAmount(transaction.commision)}

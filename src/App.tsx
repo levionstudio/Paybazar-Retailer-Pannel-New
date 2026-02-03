@@ -16,8 +16,7 @@ import UtilityPayments from "./pages/UtilityServices";
 import AePS from "./pages/Aeps";
 import AepsKyc from "./pages/Aeps2";
 import DigiKatha from "./pages/Digikhata";
-import Dmt1 from "./pages/Dmt";
-import Dmt2 from "./pages/Dmt2";
+import DmtPage from "./pages/Dmt";
 import ChangePassword from "./pages/ChangePassword";
 import ContactUs from "./pages/ContactUs";
 import MyCommission from "./pages/Commission";
@@ -25,9 +24,6 @@ import RequestFunds from "./pages/fundRequest";
 import GetFundRequests from "./pages/requestedFund";
 import UserWalletTransactions from "./pages/accounthistory";
 import Settlement from "./pages/settlement";
-import UserPayouts from "./pages/Ledger";
-import ReceiptPage from "./pages/Receipt";
-import { Settings } from "lucide-react";
 import ChangePasswordMpin from "./pages/settings";
 import ServicesReport from "./pages/ServiceReport";
 import ServiceReportSettlement from "./pages/ServiceReportSettlement";
@@ -39,7 +35,7 @@ import MobileRechargeReport from "./pages/ServiceReportRechargePrepaid";
 import DTHRecharge from "./pages/DthRecharge";
 import RechargeReports from "./pages/ReportsOfrecharge";
 import DTHRechargeReport from "./pages/ServiceReportDth";
-import DmtPage from "./pages/Dmt";
+import UserLedger from "./pages/Ledger";
 
 const queryClient = new QueryClient();
 
@@ -60,16 +56,16 @@ const App = () => (
               <Route path="/funds-request" element={<RequestFunds/>} />
               <Route path="/profile/update" element={<ProfileUpdate />} />
               <Route path="/services" element={<Services />} />
-              <Route path="/service/report" element={ <ServicesReport />} />
-              <Route path="/service/settlement/report" element={ <ServiceReportSettlement />} />
-               <Route path="/tickets" element={<MyTickets />} />
+              <Route path="/service/report" element={<ServicesReport />} />
+              <Route path="/service/settlement/report" element={<ServiceReportSettlement />} />
+              <Route path="/tickets" element={<MyTickets />} />
               <Route path="/documents" element={<MyDocuments />} />
               <Route path="/recharge" element={<UtilityPayments />} />
-              <Route path ="/mobilerecharge" element={<MobileRecharge />} />
-              <Route path ="/dthrecharge" element={<DTHRecharge />} />
-              <Route path ="/service/recharge/all" element={<RechargeReports />} />
-              <Route path ="/service/recharge/report" element={<MobileRechargeReport />} />
-              <Route path ="/service/dthrecharge/report" element={<DTHRechargeReport />} />
+              <Route path="/mobilerecharge" element={<MobileRecharge />} />
+              <Route path="/dthrecharge" element={<DTHRecharge />} />
+              <Route path="/service/recharge/all" element={<RechargeReports />} />
+              <Route path="/service/recharge/report" element={<MobileRechargeReport />} />
+              <Route path="/service/dthrecharge/report" element={<DTHRechargeReport />} />
               <Route path="/aeps" element={<AePS />} />
               <Route path="/aeps2" element={<AepsKyc />} />
               <Route path="/digikatha" element={<DigiKatha />} />
@@ -80,11 +76,13 @@ const App = () => (
               <Route path="/funds" element={<GetFundRequests />} />
               <Route path="/transactions" element={<UserWalletTransactions />} />
               <Route path="/settlement" element={<Settlement />} />
-              <Route path="/reports" element={<UserPayouts />} />
-              <Route path="/receipt/:transactionId" element={<ReceiptPage />} />
+              
+              {/* User Ledger - Combined DTH, Mobile Recharge, and Settlement Tabs */}
+              <Route path="/reports" element={<UserLedger />} />
+              
               <Route path="/tds-commissions" element={<TDSCommissionPage />} />
-
               <Route path="/settings" element={<ChangePasswordMpin />} />
+              
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
