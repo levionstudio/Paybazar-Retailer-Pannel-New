@@ -86,6 +86,7 @@ export default function ServiceReportSettlement() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
@@ -96,7 +97,7 @@ export default function ServiceReportSettlement() {
     return today.toISOString().split('T')[0];
   };
 
-  // Filter states
+  // Filter states - start with today's date
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -106,6 +107,15 @@ export default function ServiceReportSettlement() {
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Decode token
   useEffect(() => {
@@ -143,6 +153,37 @@ export default function ServiceReportSettlement() {
     }
   }, []);
 
+  // Validate dates
+  const validateDates = (): boolean => {
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      if (start > end) {
+        toast({
+          title: "Invalid Date Range",
+          description: "Start date cannot be after end date.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      const today = new Date(getTodayDate());
+      today.setHours(23, 59, 59, 999);
+      
+      if (start > today || end > today) {
+        toast({
+          title: "Invalid Date",
+          description: "Dates cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+    
+    return true;
+  };
+
   // Helper function to get transfer type name
   const getTransferTypeName = (transferType: string) => {
     switch (transferType) {
@@ -155,21 +196,40 @@ export default function ServiceReportSettlement() {
     }
   };
 
-  // Build query params helper
+  // Build query params helper - only add params that have values
   const buildQueryParams = (params: {
     limit?: number;
     offset?: number;
     start_date?: string;
     end_date?: string;
     status?: string;
+    search?: string;
   }) => {
     const queryParams = new URLSearchParams();
     
-    if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.offset !== undefined) queryParams.append('offset', params.offset.toString());
-    if (params.start_date) queryParams.append('start_date', params.start_date);
-    if (params.end_date) queryParams.append('end_date', params.end_date);
-    if (params.status && params.status !== 'ALL') queryParams.append('status', params.status);
+    // Always add limit and offset
+    if (params.limit !== undefined) {
+      queryParams.append('limit', params.limit.toString());
+    }
+    if (params.offset !== undefined) {
+      queryParams.append('offset', params.offset.toString());
+    }
+    
+    // Only add date params if both are present and non-empty
+    if (params.start_date && params.start_date.trim() && params.end_date && params.end_date.trim()) {
+      queryParams.append('start_date', params.start_date.trim());
+      queryParams.append('end_date', params.end_date.trim());
+    }
+    
+    // Add status if not ALL
+    if (params.status && params.status !== 'ALL') {
+      queryParams.append('status', params.status);
+    }
+    
+    // Add search if present
+    if (params.search && params.search.trim()) {
+      queryParams.append('search', params.search.trim());
+    }
     
     return queryParams.toString();
   };
@@ -177,6 +237,8 @@ export default function ServiceReportSettlement() {
   // Fetch transactions with query params
   const fetchTransactions = async () => {
     if (!tokenData?.user_id) return;
+
+    if (!validateDates()) return;
 
     const token = localStorage.getItem("authToken");
     setLoading(true);
@@ -189,6 +251,7 @@ export default function ServiceReportSettlement() {
         start_date: startDate,
         end_date: endDate,
         status: statusFilter,
+        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
@@ -199,10 +262,6 @@ export default function ServiceReportSettlement() {
           },
         }
       );
-
-      console.log("=== Fetch Transactions Response ===");
-      console.log("Response:", response.data);
-      console.log("====================================");
 
       // ✅ CORRECTED: Backend returns "transactions" not "payout_transactions"
       if (
@@ -220,7 +279,7 @@ export default function ServiceReportSettlement() {
         if (sortedTransactions.length > 0) {
           toast({
             title: "Success",
-            description: `Loaded ${sortedTransactions.length} transactions`,
+            description: `Loaded ${sortedTransactions.length} of ${response.data.data?.total || sortedTransactions.length} transactions`,
           });
         }
       } else {
@@ -246,7 +305,8 @@ export default function ServiceReportSettlement() {
     if (tokenData) {
       fetchTransactions();
     }
-  }, [tokenData, currentPage, entriesPerPage, startDate, endDate, statusFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenData, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
 
   // Auto-open receipt if navigated with transaction ID
   useEffect(() => {
@@ -270,27 +330,6 @@ export default function ServiceReportSettlement() {
     }
   }, [location.state, transactions]);
 
-  // Client-side search filter
-  const filteredTransactions = transactions.filter((transaction) => {
-    if (!searchTerm.trim()) return true;
-    
-    const searchLower = searchTerm.toLowerCase().trim();
-    const searchableFields = [
-      transaction.operator_transaction_id || "",
-      transaction.mobile_number,
-      transaction.bank_name,
-      transaction.beneficiary_name,
-      transaction.account_number,
-      getTransferTypeName(transaction.transfer_type),
-      transaction.transaction_status,
-      transaction.amount.toString(),
-      formatDate(transaction.created_at),
-    ];
-    return searchableFields.some((field) =>
-      String(field).toLowerCase().includes(searchLower)
-    );
-  });
-
   // Clear filters
   const clearFilters = () => {
     setStartDate(getTodayDate());
@@ -300,9 +339,21 @@ export default function ServiceReportSettlement() {
     setCurrentPage(1);
   };
 
+  // Check if filters are active
+  const hasActiveFilters = startDate !== getTodayDate() || endDate !== getTodayDate() || statusFilter !== "ALL" || searchTerm;
+
   // Export to Excel - fetch all data
   const exportToExcel = async () => {
     if (!tokenData?.user_id) return;
+
+    if (totalRecords === 0) {
+      toast({
+        title: "No Data",
+        description: "No transactions to export",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsExporting(true);
 
@@ -314,11 +365,12 @@ export default function ServiceReportSettlement() {
 
       const token = localStorage.getItem("authToken");
       const queryString = buildQueryParams({
-        limit: 10000,
+        limit: totalRecords,
         offset: 0,
         start_date: startDate,
         end_date: endDate,
         status: statusFilter,
+        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
@@ -332,26 +384,6 @@ export default function ServiceReportSettlement() {
 
       // ✅ CORRECTED: Backend returns "transactions" not "payout_transactions"
       let allData: Transaction[] = response.data?.data?.transactions || [];
-
-      // Apply search filter
-      if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase().trim();
-        allData = allData.filter((transaction) => {
-          const searchableFields = [
-            transaction.operator_transaction_id || "",
-            transaction.mobile_number,
-            transaction.bank_name,
-            transaction.beneficiary_name,
-            transaction.account_number,
-            getTransferTypeName(transaction.transfer_type),
-            transaction.transaction_status,
-            transaction.amount.toString(),
-          ];
-          return searchableFields.some((field) =>
-            String(field).toLowerCase().includes(searchLower)
-          );
-        });
-      }
 
       if (allData.length === 0) {
         toast({
@@ -372,6 +404,8 @@ export default function ServiceReportSettlement() {
         "Account Number": tx.account_number,
         "IFSC Code": tx.ifsc_code,
         "Amount (₹)": tx.amount.toFixed(2),
+        "Before Balance (₹)": tx.before_balance.toFixed(2),
+        "After Balance (₹)": tx.after_balance.toFixed(2),
         "Transfer Type": getTransferTypeName(tx.transfer_type),
         "Commission (₹)": tx.retailer_commision.toFixed(2),
         Status: tx.transaction_status,
@@ -389,6 +423,8 @@ export default function ServiceReportSettlement() {
         { wch: 20 },
         { wch: 20 },
         { wch: 18 },
+        { wch: 15 },
+        { wch: 15 },
         { wch: 15 },
         { wch: 15 },
         { wch: 15 },
@@ -645,10 +681,7 @@ export default function ServiceReportSettlement() {
                 <Filter className="h-5 w-5 text-gray-600" />
                 <h2 className="text-lg font-semibold">Filters</h2>
               </div>
-              {(startDate !== getTodayDate() ||
-                endDate !== getTodayDate() ||
-                statusFilter !== "ALL" ||
-                searchTerm) && (
+              {hasActiveFilters && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -672,7 +705,7 @@ export default function ServiceReportSettlement() {
                     setStartDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  max={endDate || new Date().toISOString().split("T")[0]}
+                  max={getTodayDate()}
                   className="h-9"
                 />
               </div>
@@ -688,8 +721,7 @@ export default function ServiceReportSettlement() {
                     setEndDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  min={startDate}
-                  max={new Date().toISOString().split("T")[0]}
+                  max={getTodayDate()}
                   className="h-9"
                 />
               </div>
@@ -721,7 +753,10 @@ export default function ServiceReportSettlement() {
                   id="search"
                   type="text"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="Search transactions..."
                   className="h-9"
                 />
@@ -754,7 +789,8 @@ export default function ServiceReportSettlement() {
                 <span className="text-sm text-gray-600">entries</span>
               </div>
               <div className="text-sm text-gray-600">
-                (Showing {filteredTransactions.length} of {totalRecords} records)
+                Showing {totalRecords > 0 ? (currentPage - 1) * entriesPerPage + 1 : 0} to{" "}
+                {Math.min(currentPage * entriesPerPage, totalRecords)} of {totalRecords} records
               </div>
             </div>
 
@@ -762,6 +798,7 @@ export default function ServiceReportSettlement() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
+                    <TableHead className="text-center whitespace-nowrap">S.NO</TableHead>
                     <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
                     <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
                     <TableHead className="text-center whitespace-nowrap">PHONE</TableHead>
@@ -780,7 +817,7 @@ export default function ServiceReportSettlement() {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-12">
+                      <TableCell colSpan={14} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
                           <p className="text-gray-500">
@@ -789,24 +826,18 @@ export default function ServiceReportSettlement() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ) : filteredTransactions.length === 0 ? (
+                  ) : transactions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-12">
+                      <TableCell colSpan={14} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <ReceiptIcon className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-500 font-medium">
-                            {searchTerm ||
-                            startDate !== getTodayDate() ||
-                            endDate !== getTodayDate() ||
-                            statusFilter !== "ALL"
+                            {hasActiveFilters
                               ? "No matching transactions found"
                               : "No transactions found"}
                           </p>
                           <p className="text-sm text-gray-400">
-                            {searchTerm ||
-                            startDate !== getTodayDate() ||
-                            endDate !== getTodayDate() ||
-                            statusFilter !== "ALL"
+                            {hasActiveFilters
                               ? "Try adjusting your filters"
                               : "Your settlement transactions will appear here"}
                           </p>
@@ -814,8 +845,11 @@ export default function ServiceReportSettlement() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredTransactions.map((transaction) => (
+                    transactions.map((transaction, index) => (
                       <TableRow key={transaction.payout_transaction_id}>
+                        <TableCell className="text-center">
+                          {(currentPage - 1) * entriesPerPage + index + 1}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap text-center">
                           {formatDate(transaction.created_at)}
                         </TableCell>
@@ -844,7 +878,7 @@ export default function ServiceReportSettlement() {
                             {getTransferTypeName(transaction.transfer_type)}
                           </span>
                         </TableCell>
-                        <TableCell className="text-center font-semibold">
+                        <TableCell className="text-center font-semibold text-green-600">
                           ₹{formatAmount(transaction.retailer_commision)}
                         </TableCell>
                         <TableCell className="text-center">

@@ -76,6 +76,7 @@ export default function MobileRechargeReport() {
   const [transactions, setTransactions] = useState<MobileRechargeTransaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
@@ -86,7 +87,7 @@ export default function MobileRechargeReport() {
     return today.toISOString().split("T")[0];
   };
 
-  // Filter states
+  // Filter states - start with today's date
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -96,6 +97,27 @@ export default function MobileRechargeReport() {
   const [selectedTransaction, setSelectedTransaction] =
     useState<MobileRechargeTransaction | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Debug log for filter changes
+  useEffect(() => {
+    console.log("Filters changed:", {
+      startDate,
+      endDate,
+      statusFilter,
+      debouncedSearchTerm,
+      currentPage,
+      entriesPerPage,
+    });
+  }, [startDate, endDate, statusFilter, debouncedSearchTerm, currentPage, entriesPerPage]);
 
   // Decode token and get retailer ID
   useEffect(() => {
@@ -134,54 +156,116 @@ export default function MobileRechargeReport() {
     }
   }, [navigate, toast]);
 
-  // Build query params helper
+  // Validate dates
+  const validateDates = (): boolean => {
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      if (start > end) {
+        toast({
+          title: "Invalid Date Range",
+          description: "Start date cannot be after end date.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      const today = new Date(getTodayDate());
+      today.setHours(23, 59, 59, 999);
+      
+      if (start > today || end > today) {
+        toast({
+          title: "Invalid Date",
+          description: "Dates cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+    
+    return true;
+  };
+
+  // Build query params helper - only add params that have values
   const buildQueryParams = (params: {
     limit?: number;
     offset?: number;
     start_date?: string;
     end_date?: string;
     status?: string;
+    search?: string;
   }) => {
     const queryParams = new URLSearchParams();
 
-    if (params.limit) queryParams.append("limit", params.limit.toString());
-    if (params.offset !== undefined)
+    // Always add limit and offset
+    if (params.limit !== undefined) {
+      queryParams.append("limit", params.limit.toString());
+    }
+    if (params.offset !== undefined) {
       queryParams.append("offset", params.offset.toString());
-    if (params.start_date) queryParams.append("start_date", params.start_date);
-    if (params.end_date) queryParams.append("end_date", params.end_date);
-    if (params.status && params.status !== "ALL")
+    }
+    
+    // Only add date params if both are present and non-empty
+    if (params.start_date && params.start_date.trim() && params.end_date && params.end_date.trim()) {
+      queryParams.append("start_date", params.start_date.trim());
+      queryParams.append("end_date", params.end_date.trim());
+    }
+    
+    // Add status if not ALL
+    if (params.status && params.status !== "ALL") {
       queryParams.append("status", params.status);
+    }
+    
+    // Add search if present
+    if (params.search && params.search.trim()) {
+      queryParams.append("search", params.search.trim());
+    }
 
-    return queryParams.toString();
+    const queryString = queryParams.toString();
+    console.log("Built Query String:", queryString); // Debug log
+    return queryString;
   };
 
   // Fetch transactions with query params
   const fetchTransactions = async () => {
     if (!retailerId) return;
 
+    if (!validateDates()) return;
+
     const token = localStorage.getItem("authToken");
     setLoading(true);
 
     try {
       const offset = (currentPage - 1) * entriesPerPage;
+      
+      // Debug logs
+      console.log("Fetch Params:", {
+        limit: entriesPerPage,
+        offset: offset,
+        start_date: startDate,
+        end_date: endDate,
+        status: statusFilter,
+        search: debouncedSearchTerm,
+      });
+      
       const queryString = buildQueryParams({
         limit: entriesPerPage,
         offset: offset,
         start_date: startDate,
         end_date: endDate,
         status: statusFilter,
+        search: debouncedSearchTerm,
       });
 
-      const response = await axios.get(
-        `${
-          import.meta.env.VITE_API_BASE_URL
-        }/mobile_recharge/get/${retailerId}?${queryString}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const fullUrl = `${import.meta.env.VITE_API_BASE_URL}/mobile_recharge/get/${retailerId}?${queryString}`;
+      console.log("Full API URL:", fullUrl); // Debug log
+
+      const response = await axios.get(fullUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
       if (
         response.data?.status === "success" &&
@@ -198,7 +282,7 @@ export default function MobileRechargeReport() {
         if (sortedTransactions.length > 0) {
           toast({
             title: "Success",
-            description: `Loaded ${sortedTransactions.length} transactions`,
+            description: `Loaded ${sortedTransactions.length} of ${response.data.data?.total || sortedTransactions.length} transactions`,
           });
         }
       } else {
@@ -225,26 +309,8 @@ export default function MobileRechargeReport() {
     if (retailerId) {
       fetchTransactions();
     }
-  }, [retailerId, currentPage, entriesPerPage, startDate, endDate, statusFilter]);
-
-  // Client-side search filter
-  const filteredTransactions = transactions.filter((transaction) => {
-    if (!searchTerm.trim()) return true;
-
-    const searchLower = searchTerm.toLowerCase().trim();
-    const searchableFields = [
-      transaction.mobile_recharge_transaction_id.toString(),
-      transaction.mobile_number,
-      transaction.operator_name,
-      transaction.circle_name,
-      transaction.status,
-      transaction.amount.toString(),
-      formatDate(transaction.created_at),
-    ];
-    return searchableFields.some((field) =>
-      String(field).toLowerCase().includes(searchLower)
-    );
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retailerId, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
 
   // Clear filters
   const clearFilters = () => {
@@ -255,9 +321,21 @@ export default function MobileRechargeReport() {
     setCurrentPage(1);
   };
 
+  // Check if filters are active
+  const hasActiveFilters = startDate !== getTodayDate() || endDate !== getTodayDate() || statusFilter !== "ALL" || searchTerm;
+
   // Export to Excel - fetch all data
   const exportToExcel = async () => {
     if (!retailerId) return;
+
+    if (totalRecords === 0) {
+      toast({
+        title: "No Data",
+        description: "No transactions to export",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsExporting(true);
 
@@ -269,11 +347,12 @@ export default function MobileRechargeReport() {
 
       const token = localStorage.getItem("authToken");
       const queryString = buildQueryParams({
-        limit: 10000,
+        limit: totalRecords,
         offset: 0,
         start_date: startDate,
         end_date: endDate,
         status: statusFilter,
+        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
@@ -289,24 +368,6 @@ export default function MobileRechargeReport() {
 
       let allData: MobileRechargeTransaction[] =
         response.data?.data?.recharges || [];
-
-      // Apply search filter
-      if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase().trim();
-        allData = allData.filter((transaction) => {
-          const searchableFields = [
-            transaction.mobile_recharge_transaction_id.toString(),
-            transaction.mobile_number,
-            transaction.operator_name,
-            transaction.circle_name,
-            transaction.status,
-            transaction.amount.toString(),
-          ];
-          return searchableFields.some((field) =>
-            String(field).toLowerCase().includes(searchLower)
-          );
-        });
-      }
 
       if (allData.length === 0) {
         toast({
@@ -325,6 +386,8 @@ export default function MobileRechargeReport() {
         Operator: tx.operator_name,
         Circle: tx.circle_name,
         "Amount (₹)": tx.amount.toFixed(2),
+        "Before Balance (₹)": tx.before_balance.toFixed(2),
+        "After Balance (₹)": tx.after_balance.toFixed(2),
         "Commission (₹)": tx.commision.toFixed(2),
         "Recharge Type": tx.recharge_type === "1" ? "Prepaid" : "Postpaid",
         Status: tx.status,
@@ -342,6 +405,8 @@ export default function MobileRechargeReport() {
         { wch: 20 },
         { wch: 20 },
         { wch: 12 },
+        { wch: 15 },
+        { wch: 15 },
         { wch: 12 },
         { wch: 15 },
         { wch: 12 },
@@ -599,10 +664,7 @@ export default function MobileRechargeReport() {
                 <Filter className="h-5 w-5 text-gray-600" />
                 <h2 className="text-lg font-semibold">Filters</h2>
               </div>
-              {(startDate !== getTodayDate() ||
-                endDate !== getTodayDate() ||
-                statusFilter !== "ALL" ||
-                searchTerm) && (
+              {hasActiveFilters && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -626,7 +688,7 @@ export default function MobileRechargeReport() {
                     setStartDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  max={endDate || new Date().toISOString().split("T")[0]}
+                  max={getTodayDate()}
                   className="h-9"
                 />
               </div>
@@ -642,8 +704,7 @@ export default function MobileRechargeReport() {
                     setEndDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  min={startDate}
-                  max={new Date().toISOString().split("T")[0]}
+                  max={getTodayDate()}
                   className="h-9"
                 />
               </div>
@@ -677,7 +738,10 @@ export default function MobileRechargeReport() {
                   id="search"
                   type="text"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="Search transactions..."
                   className="h-9"
                 />
@@ -710,7 +774,8 @@ export default function MobileRechargeReport() {
                 <span className="text-sm text-gray-600">entries</span>
               </div>
               <div className="text-sm text-gray-600">
-                (Showing {filteredTransactions.length} of {totalRecords} records)
+                Showing {totalRecords > 0 ? (currentPage - 1) * entriesPerPage + 1 : 0} to{" "}
+                {Math.min(currentPage * entriesPerPage, totalRecords)} of {totalRecords} records
               </div>
             </div>
 
@@ -762,31 +827,25 @@ export default function MobileRechargeReport() {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-12">
+                      <TableCell colSpan={13} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
                           <p className="text-gray-500">Loading transactions...</p>
                         </div>
                       </TableCell>
                     </TableRow>
-                  ) : filteredTransactions.length === 0 ? (
+                  ) : transactions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-12">
+                      <TableCell colSpan={13} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <Smartphone className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-500 font-medium">
-                            {searchTerm ||
-                            startDate !== getTodayDate() ||
-                            endDate !== getTodayDate() ||
-                            statusFilter !== "ALL"
+                            {hasActiveFilters
                               ? "No matching transactions found"
                               : "No transactions found"}
                           </p>
                           <p className="text-sm text-gray-400">
-                            {searchTerm ||
-                            startDate !== getTodayDate() ||
-                            endDate !== getTodayDate() ||
-                            statusFilter !== "ALL"
+                            {hasActiveFilters
                               ? "Try adjusting your filters"
                               : "Your recharge transactions will appear here"}
                           </p>
@@ -794,7 +853,7 @@ export default function MobileRechargeReport() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredTransactions.map((transaction, index) => (
+                    transactions.map((transaction, index) => (
                       <TableRow
                         key={transaction.mobile_recharge_transaction_id}
                       >
@@ -1056,10 +1115,6 @@ export default function MobileRechargeReport() {
                     <span className="font-bold text-2xl text-black">
                       ₹{formatAmount(selectedTransaction.amount)}
                     </span>
-                  </div>
-
-                  <div className="flex justify-between items-center py-2">
-                 
                   </div>
                 </div>
               </div>
