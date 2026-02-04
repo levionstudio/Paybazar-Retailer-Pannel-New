@@ -37,6 +37,9 @@ import {
   Filter,
   Receipt as ReceiptIcon,
   Tv,
+  Calendar,
+  AlertCircle,
+  X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
@@ -69,30 +72,40 @@ export default function DTHRechargeReport() {
   const { toast } = useToast();
   const receiptRef = useRef<HTMLDivElement>(null);
 
+  /* -------------------- HELPER: Get Today's Date -------------------- */
+  const getTodayDate = () => {
+    return new Date().toISOString().split("T")[0];
+  };
+
   const [retailerId, setRetailerId] = useState<string>("");
   const [transactions, setTransactions] = useState<DTHRechargeTransaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
 
-  // Get today's date in YYYY-MM-DD format
-  const getTodayDate = () => {
-    const today = new Date();
-    return today.toISOString().split("T")[0];
-  };
-
-  // Filter states
+  // Filter states - start with today's date
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [dateError, setDateError] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
 
   // Receipt dialog
   const [selectedTransaction, setSelectedTransaction] =
     useState<DTHRechargeTransaction | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Decode token and get retailer ID
   useEffect(() => {
@@ -131,6 +144,114 @@ export default function DTHRechargeReport() {
     }
   }, [navigate, toast]);
 
+  /* -------------------- DATE VALIDATION -------------------- */
+
+  const validateDates = (): boolean => {
+    setDateError("");
+
+    // If no dates are selected, validation passes
+    if (!startDate && !endDate) {
+      return true;
+    }
+
+    const today = new Date(getTodayDate());
+    today.setHours(0, 0, 0, 0);
+
+    // Validate start date
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+
+      if (start > today) {
+        setDateError("Start date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "Start date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate end date
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(0, 0, 0, 0);
+
+      if (end > today) {
+        setDateError("End date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "End date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate date range
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      if (start > end) {
+        setDateError("Start date cannot be after end date");
+        toast({
+          title: "Invalid Date Range",
+          description: "Start date cannot be after end date.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      // Optional: Check if date range is too large (e.g., more than 1 year)
+      const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysDifference > 365) {
+        setDateError("Date range cannot exceed 1 year");
+        toast({
+          title: "Invalid Date Range",
+          description: "Please select a date range within 1 year.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  /* -------------------- HANDLE DATE CHANGES -------------------- */
+
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    setDateError("");
+    
+    // If end date exists and new start date is after it, clear end date
+    if (value && endDate) {
+      const start = new Date(value);
+      const end = new Date(endDate);
+      if (start > end) {
+        setEndDate("");
+      }
+    }
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    setDateError("");
+    
+    // If start date exists and new end date is before it, clear start date
+    if (value && startDate) {
+      const start = new Date(startDate);
+      const end = new Date(value);
+      if (end < start) {
+        setStartDate("");
+      }
+    }
+  };
+
   // Build query params helper
   const buildQueryParams = (params: {
     limit?: number;
@@ -138,16 +259,35 @@ export default function DTHRechargeReport() {
     start_date?: string;
     end_date?: string;
     status?: string;
+    search?: string;
   }) => {
     const queryParams = new URLSearchParams();
 
-    if (params.limit) queryParams.append("limit", params.limit.toString());
-    if (params.offset !== undefined)
+    // Always add limit and offset
+    if (params.limit !== undefined) {
+      queryParams.append("limit", params.limit.toString());
+    }
+    if (params.offset !== undefined) {
       queryParams.append("offset", params.offset.toString());
-    if (params.start_date) queryParams.append("start_date", params.start_date);
-    if (params.end_date) queryParams.append("end_date", params.end_date);
-    if (params.status && params.status !== "ALL")
+    }
+    
+    // Add date params with timestamps for proper filtering
+    if (params.start_date && params.start_date.trim()) {
+      queryParams.append("start_date", `${params.start_date.trim()}T00:00:00`);
+    }
+    if (params.end_date && params.end_date.trim()) {
+      queryParams.append("end_date", `${params.end_date.trim()}T23:59:59`);
+    }
+    
+    // Add status if not ALL
+    if (params.status && params.status !== "ALL") {
       queryParams.append("status", params.status);
+    }
+    
+    // Add search if present
+    if (params.search && params.search.trim()) {
+      queryParams.append("search", params.search.trim());
+    }
 
     return queryParams.toString();
   };
@@ -155,6 +295,8 @@ export default function DTHRechargeReport() {
   // Fetch transactions with query params
   const fetchTransactions = async () => {
     if (!retailerId) return;
+
+    if (!validateDates()) return;
 
     const token = localStorage.getItem("authToken");
     setLoading(true);
@@ -167,12 +309,11 @@ export default function DTHRechargeReport() {
         start_date: startDate,
         end_date: endDate,
         status: statusFilter,
+        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
-        `${
-          import.meta.env.VITE_API_BASE_URL
-        }/dth_recharge/get/${retailerId}?${queryString}`,
+        `${import.meta.env.VITE_API_BASE_URL}/dth_recharge/get/${retailerId}?${queryString}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -184,20 +325,29 @@ export default function DTHRechargeReport() {
         response.data?.status === "success" &&
         Array.isArray(response.data.data?.recharges)
       ) {
-        const sortedTransactions = response.data.data.recharges.sort(
+        const raw: DTHRechargeTransaction[] = response.data.data.recharges || [];
+        
+        // Client-side date filtering as additional safety
+        const filtered = raw.filter((tx) => {
+          if (!startDate && !endDate) return true;
+          
+          const txDate = new Date(tx.created_at);
+          const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+          const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+          
+          if (start && txDate < start) return false;
+          if (end && txDate > end) return false;
+          
+          return true;
+        });
+
+        const sortedTransactions = filtered.sort(
           (a: DTHRechargeTransaction, b: DTHRechargeTransaction) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
         setTransactions(sortedTransactions);
         setTotalRecords(response.data.data?.total || sortedTransactions.length);
-
-        if (sortedTransactions.length > 0) {
-          toast({
-            title: "Success",
-            description: `Loaded ${sortedTransactions.length} transactions`,
-          });
-        }
       } else {
         setTransactions([]);
         setTotalRecords(0);
@@ -219,28 +369,11 @@ export default function DTHRechargeReport() {
 
   // Fetch transactions when filters or pagination changes
   useEffect(() => {
-    if (retailerId) {
+    if (retailerId && validateDates()) {
       fetchTransactions();
     }
-  }, [retailerId, currentPage, entriesPerPage, startDate, endDate, statusFilter]);
-
-  // Client-side search filter
-  const filteredTransactions = transactions.filter((transaction) => {
-    if (!searchTerm.trim()) return true;
-
-    const searchLower = searchTerm.toLowerCase().trim();
-    const searchableFields = [
-      transaction.dth_transaction_id.toString(),
-      transaction.customer_id,
-      transaction.operator_name,
-      transaction.status,
-      transaction.amount.toString(),
-      formatDate(transaction.created_at),
-    ];
-    return searchableFields.some((field) =>
-      String(field).toLowerCase().includes(searchLower)
-    );
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retailerId, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
 
   // Clear filters
   const clearFilters = () => {
@@ -248,12 +381,31 @@ export default function DTHRechargeReport() {
     setEndDate(getTodayDate());
     setStatusFilter("ALL");
     setSearchTerm("");
+    setDateError("");
     setCurrentPage(1);
   };
+
+  // Check if filters are active
+  const hasActiveFilters = 
+    startDate !== getTodayDate() || 
+    endDate !== getTodayDate() || 
+    statusFilter !== "ALL" || 
+    searchTerm;
 
   // Export to Excel - fetch all data
   const exportToExcel = async () => {
     if (!retailerId) return;
+
+    if (totalRecords === 0) {
+      toast({
+        title: "No Data",
+        description: "No transactions to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!validateDates()) return;
 
     setIsExporting(true);
 
@@ -265,17 +417,16 @@ export default function DTHRechargeReport() {
 
       const token = localStorage.getItem("authToken");
       const queryString = buildQueryParams({
-        limit: 10000,
+        limit: totalRecords,
         offset: 0,
         start_date: startDate,
         end_date: endDate,
         status: statusFilter,
+        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
-        `${
-          import.meta.env.VITE_API_BASE_URL
-        }/dth_recharge/get/${retailerId}?${queryString}`,
+        `${import.meta.env.VITE_API_BASE_URL}/dth_recharge/get/${retailerId}?${queryString}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -285,23 +436,6 @@ export default function DTHRechargeReport() {
 
       let allData: DTHRechargeTransaction[] =
         response.data?.data?.recharges || [];
-
-      // Apply search filter
-      if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase().trim();
-        allData = allData.filter((transaction) => {
-          const searchableFields = [
-            transaction.dth_transaction_id.toString(),
-            transaction.customer_id,
-            transaction.operator_name,
-            transaction.status,
-            transaction.amount.toString(),
-          ];
-          return searchableFields.some((field) =>
-            String(field).toLowerCase().includes(searchLower)
-          );
-        });
-      }
 
       if (allData.length === 0) {
         toast({
@@ -319,6 +453,8 @@ export default function DTHRechargeReport() {
         "Customer ID": tx.customer_id,
         Operator: tx.operator_name,
         "Amount (₹)": tx.amount.toFixed(2),
+        "Before Balance (₹)": tx.before_balance.toFixed(2),
+        "After Balance (₹)": tx.after_balance.toFixed(2),
         "Commission (₹)": tx.commision.toFixed(2),
         Status: tx.status,
       }));
@@ -334,6 +470,8 @@ export default function DTHRechargeReport() {
         { wch: 15 },
         { wch: 20 },
         { wch: 12 },
+        { wch: 15 },
+        { wch: 15 },
         { wch: 12 },
         { wch: 12 },
       ];
@@ -590,20 +728,26 @@ export default function DTHRechargeReport() {
                 <Filter className="h-5 w-5 text-gray-600" />
                 <h2 className="text-lg font-semibold">Filters</h2>
               </div>
-              {(startDate !== getTodayDate() ||
-                endDate !== getTodayDate() ||
-                statusFilter !== "ALL" ||
-                searchTerm) && (
+              {hasActiveFilters && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={clearFilters}
                   className="text-red-600 hover:bg-red-50"
                 >
+                  <X className="h-4 w-4 mr-1" />
                   Clear All Filters
                 </Button>
               )}
             </div>
+
+            {/* Date Error Alert */}
+            {dateError && (
+              <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-red-700 font-medium">{dateError}</p>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Start Date */}
@@ -614,12 +758,21 @@ export default function DTHRechargeReport() {
                   type="date"
                   value={startDate}
                   onChange={(e) => {
-                    setStartDate(e.target.value);
+                    handleStartDateChange(e.target.value);
                     setCurrentPage(1);
                   }}
-                  max={endDate || new Date().toISOString().split("T")[0]}
-                  className="h-9"
+                  max={getTodayDate()}
+                  className={`h-9 ${dateError && startDate ? "border-red-500" : ""}`}
                 />
+                {startDate && (
+                  <p className="text-xs text-muted-foreground">
+                    From: {new Date(startDate).toLocaleDateString("en-IN", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
+                )}
               </div>
 
               {/* End Date */}
@@ -630,13 +783,22 @@ export default function DTHRechargeReport() {
                   type="date"
                   value={endDate}
                   onChange={(e) => {
-                    setEndDate(e.target.value);
+                    handleEndDateChange(e.target.value);
                     setCurrentPage(1);
                   }}
-                  min={startDate}
-                  max={new Date().toISOString().split("T")[0]}
-                  className="h-9"
+                  min={startDate || undefined}
+                  max={getTodayDate()}
+                  className={`h-9 ${dateError && endDate ? "border-red-500" : ""}`}
                 />
+                {endDate && (
+                  <p className="text-xs text-muted-foreground">
+                    To: {new Date(endDate).toLocaleDateString("en-IN", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
+                )}
               </div>
 
               {/* Status Filter */}
@@ -668,10 +830,58 @@ export default function DTHRechargeReport() {
                   id="search"
                   type="text"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search transactions..."
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Customer ID, operator..."
                   className="h-9"
                 />
+                {searchTerm && (
+                  <p className="text-xs text-muted-foreground">
+                    Searching for: "{searchTerm}"
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Active Filter Status */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <Calendar className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-900">
+                  Active Filters Applied
+                </p>
+                <div className="mt-1 flex flex-wrap gap-2 text-xs text-blue-700">
+                  <span className="bg-blue-100 px-2 py-1 rounded">
+                    Date Range: {new Date(startDate).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })} - {new Date(endDate).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                  {statusFilter !== "ALL" && (
+                    <span className="bg-blue-100 px-2 py-1 rounded">
+                      Status: {statusFilter}
+                    </span>
+                  )}
+                  {searchTerm && (
+                    <span className="bg-blue-100 px-2 py-1 rounded">
+                      Search: "{searchTerm}"
+                    </span>
+                  )}
+                  {(startDate !== getTodayDate() || endDate !== getTodayDate()) && (
+                    <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded">
+                      Custom date range selected
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -701,7 +911,8 @@ export default function DTHRechargeReport() {
                 <span className="text-sm text-gray-600">entries</span>
               </div>
               <div className="text-sm text-gray-600">
-                (Showing {filteredTransactions.length} of {totalRecords} records)
+                Showing {totalRecords > 0 ? (currentPage - 1) * entriesPerPage + 1 : 0} to{" "}
+                {Math.min(currentPage * entriesPerPage, totalRecords)} of {totalRecords} records
               </div>
             </div>
 
@@ -747,31 +958,25 @@ export default function DTHRechargeReport() {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12">
+                      <TableCell colSpan={11} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
                           <p className="text-gray-500">Loading transactions...</p>
                         </div>
                       </TableCell>
                     </TableRow>
-                  ) : filteredTransactions.length === 0 ? (
+                  ) : transactions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12">
+                      <TableCell colSpan={11} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
                           <Tv className="h-12 w-12 text-gray-300" />
                           <p className="text-gray-500 font-medium">
-                            {searchTerm ||
-                            startDate !== getTodayDate() ||
-                            endDate !== getTodayDate() ||
-                            statusFilter !== "ALL"
+                            {hasActiveFilters
                               ? "No matching transactions found"
                               : "No transactions found"}
                           </p>
                           <p className="text-sm text-gray-400">
-                            {searchTerm ||
-                            startDate !== getTodayDate() ||
-                            endDate !== getTodayDate() ||
-                            statusFilter !== "ALL"
+                            {hasActiveFilters
                               ? "Try adjusting your filters"
                               : "Your recharge transactions will appear here"}
                           </p>
@@ -779,10 +984,8 @@ export default function DTHRechargeReport() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredTransactions.map((transaction, index) => (
-                      <TableRow
-                        key={transaction.dth_transaction_id}
-                      >
+                    transactions.map((transaction, index) => (
+                      <TableRow key={transaction.dth_transaction_id}>
                         <TableCell className="text-center">
                           {(currentPage - 1) * entriesPerPage + index + 1}
                         </TableCell>

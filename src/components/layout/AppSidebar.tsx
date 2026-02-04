@@ -324,10 +324,10 @@ export function AppSidebar() {
           </SidebarGroup>
 
           {/* TDS HISTORY COLLAPSIBLE */}
-          <SidebarGroup>
+          {/* <SidebarGroup>
             <SidebarGroupContent>
               {isCollapsed ? (
-                // COLLAPSED MODE (just icon)
+
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
@@ -344,7 +344,7 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 </SidebarMenu>
               ) : (
-                // EXPANDED MODE
+      
                 <Collapsible open={tdsOpen} onOpenChange={setTdsOpen}>
                   <CollapsibleTrigger
                     className={`flex w-full items-center justify-between px-3 py-2 rounded-lg transition-all ${
@@ -365,7 +365,7 @@ export function AppSidebar() {
                   </CollapsibleTrigger>
 
                   <CollapsibleContent className="mt-1 space-y-1">
-                    {/* TDS Commissions */}
+
                     <a
                       href="/tds-commissions"
                       className={`flex items-center px-3 py-2 pl-11 rounded-lg text-sm transition-all ${
@@ -380,7 +380,7 @@ export function AppSidebar() {
                 </Collapsible>
               )}
             </SidebarGroupContent>
-          </SidebarGroup>
+          </SidebarGroup> */}
 
           {/* BOTTOM MENU */}
           <SidebarGroup>

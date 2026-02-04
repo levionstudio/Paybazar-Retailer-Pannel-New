@@ -36,6 +36,9 @@ import {
   Printer,
   Filter,
   Receipt as ReceiptIcon,
+  Calendar,
+  AlertCircle,
+  X,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import * as XLSX from "xlsx";
@@ -62,13 +65,13 @@ interface Transaction {
   retailer_name: string;
   retailer_business_name: string;
   mobile_number: string;
-  bank_name: string;  // ✅ Changed from beneficiary_bank_name
+  bank_name: string;
   beneficiary_name: string;
-  account_number: string;  // ✅ Changed from beneficiary_account_number
-  ifsc_code: string;  // ✅ Changed from beneficiary_ifsc_code
+  account_number: string;
+  ifsc_code: string;
   amount: number;
   transfer_type: string;
-  transaction_status: string;  // ✅ Changed from payout_transaction_status
+  transaction_status: string;
   retailer_commision: number;
   before_balance: number;
   after_balance: number;
@@ -82,6 +85,11 @@ export default function ServiceReportSettlement() {
   const { toast } = useToast();
   const receiptRef = useRef<HTMLDivElement>(null);
 
+  /* -------------------- HELPER: Get Today's Date -------------------- */
+  const getTodayDate = () => {
+    return new Date().toISOString().split("T")[0];
+  };
+
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,16 +99,11 @@ export default function ServiceReportSettlement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
 
-  // Get today's date in YYYY-MM-DD format
-  const getTodayDate = () => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  };
-
   // Filter states - start with today's date
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [dateError, setDateError] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
 
   // Receipt dialog
@@ -153,13 +156,60 @@ export default function ServiceReportSettlement() {
     }
   }, []);
 
-  // Validate dates
+  /* -------------------- DATE VALIDATION -------------------- */
+
   const validateDates = (): boolean => {
+    setDateError("");
+
+    // If no dates are selected, validation passes
+    if (!startDate && !endDate) {
+      return true;
+    }
+
+    const today = new Date(getTodayDate());
+    today.setHours(0, 0, 0, 0);
+
+    // Validate start date
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+
+      if (start > today) {
+        setDateError("Start date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "Start date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate end date
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(0, 0, 0, 0);
+
+      if (end > today) {
+        setDateError("End date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "End date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate date range
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
       if (start > end) {
+        setDateError("Start date cannot be after end date");
         toast({
           title: "Invalid Date Range",
           description: "Start date cannot be after end date.",
@@ -168,20 +218,50 @@ export default function ServiceReportSettlement() {
         return false;
       }
 
-      const today = new Date(getTodayDate());
-      today.setHours(23, 59, 59, 999);
-      
-      if (start > today || end > today) {
+      // Optional: Check if date range is too large (e.g., more than 1 year)
+      const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysDifference > 365) {
+        setDateError("Date range cannot exceed 1 year");
         toast({
-          title: "Invalid Date",
-          description: "Dates cannot be in the future.",
+          title: "Invalid Date Range",
+          description: "Please select a date range within 1 year.",
           variant: "destructive",
         });
         return false;
       }
     }
-    
+
     return true;
+  };
+
+  /* -------------------- HANDLE DATE CHANGES -------------------- */
+
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    setDateError("");
+    
+    // If end date exists and new start date is after it, clear end date
+    if (value && endDate) {
+      const start = new Date(value);
+      const end = new Date(endDate);
+      if (start > end) {
+        setEndDate("");
+      }
+    }
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    setDateError("");
+    
+    // If start date exists and new end date is before it, clear start date
+    if (value && startDate) {
+      const start = new Date(startDate);
+      const end = new Date(value);
+      if (end < start) {
+        setStartDate("");
+      }
+    }
   };
 
   // Helper function to get transfer type name
@@ -215,10 +295,12 @@ export default function ServiceReportSettlement() {
       queryParams.append('offset', params.offset.toString());
     }
     
-    // Only add date params if both are present and non-empty
-    if (params.start_date && params.start_date.trim() && params.end_date && params.end_date.trim()) {
-      queryParams.append('start_date', params.start_date.trim());
-      queryParams.append('end_date', params.end_date.trim());
+    // Add date params with timestamps for proper filtering
+    if (params.start_date && params.start_date.trim()) {
+      queryParams.append('start_date', `${params.start_date.trim()}T00:00:00`);
+    }
+    if (params.end_date && params.end_date.trim()) {
+      queryParams.append('end_date', `${params.end_date.trim()}T23:59:59`);
     }
     
     // Add status if not ALL
@@ -268,20 +350,29 @@ export default function ServiceReportSettlement() {
         response.data?.status === "success" &&
         Array.isArray(response.data.data?.transactions)
       ) {
-        const sortedTransactions = response.data.data.transactions.sort(
+        const raw: Transaction[] = response.data.data.transactions || [];
+        
+        // Client-side date filtering as additional safety
+        const filtered = raw.filter((tx) => {
+          if (!startDate && !endDate) return true;
+          
+          const txDate = new Date(tx.created_at);
+          const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+          const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+          
+          if (start && txDate < start) return false;
+          if (end && txDate > end) return false;
+          
+          return true;
+        });
+
+        const sortedTransactions = filtered.sort(
           (a: Transaction, b: Transaction) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
         setTransactions(sortedTransactions);
         setTotalRecords(response.data.data?.total || sortedTransactions.length);
-        
-        if (sortedTransactions.length > 0) {
-          toast({
-            title: "Success",
-            description: `Loaded ${sortedTransactions.length} of ${response.data.data?.total || sortedTransactions.length} transactions`,
-          });
-        }
       } else {
         setTransactions([]);
         setTotalRecords(0);
@@ -302,7 +393,7 @@ export default function ServiceReportSettlement() {
 
   // Fetch transactions when filters or pagination changes
   useEffect(() => {
-    if (tokenData) {
+    if (tokenData && validateDates()) {
       fetchTransactions();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -336,11 +427,16 @@ export default function ServiceReportSettlement() {
     setEndDate(getTodayDate());
     setStatusFilter("ALL");
     setSearchTerm("");
+    setDateError("");
     setCurrentPage(1);
   };
 
   // Check if filters are active
-  const hasActiveFilters = startDate !== getTodayDate() || endDate !== getTodayDate() || statusFilter !== "ALL" || searchTerm;
+  const hasActiveFilters = 
+    startDate !== getTodayDate() || 
+    endDate !== getTodayDate() || 
+    statusFilter !== "ALL" || 
+    searchTerm;
 
   // Export to Excel - fetch all data
   const exportToExcel = async () => {
@@ -354,6 +450,8 @@ export default function ServiceReportSettlement() {
       });
       return;
     }
+
+    if (!validateDates()) return;
 
     setIsExporting(true);
 
@@ -688,10 +786,19 @@ export default function ServiceReportSettlement() {
                   onClick={clearFilters}
                   className="text-red-600 hover:bg-red-50"
                 >
+                  <X className="h-4 w-4 mr-1" />
                   Clear All Filters
                 </Button>
               )}
             </div>
+
+            {/* Date Error Alert */}
+            {dateError && (
+              <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-red-700 font-medium">{dateError}</p>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Start Date */}
@@ -702,12 +809,21 @@ export default function ServiceReportSettlement() {
                   type="date"
                   value={startDate}
                   onChange={(e) => {
-                    setStartDate(e.target.value);
+                    handleStartDateChange(e.target.value);
                     setCurrentPage(1);
                   }}
                   max={getTodayDate()}
-                  className="h-9"
+                  className={`h-9 ${dateError && startDate ? "border-red-500" : ""}`}
                 />
+                {startDate && (
+                  <p className="text-xs text-muted-foreground">
+                    From: {new Date(startDate).toLocaleDateString("en-IN", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
+                )}
               </div>
 
               {/* End Date */}
@@ -718,12 +834,22 @@ export default function ServiceReportSettlement() {
                   type="date"
                   value={endDate}
                   onChange={(e) => {
-                    setEndDate(e.target.value);
+                    handleEndDateChange(e.target.value);
                     setCurrentPage(1);
                   }}
+                  min={startDate || undefined}
                   max={getTodayDate()}
-                  className="h-9"
+                  className={`h-9 ${dateError && endDate ? "border-red-500" : ""}`}
                 />
+                {endDate && (
+                  <p className="text-xs text-muted-foreground">
+                    To: {new Date(endDate).toLocaleDateString("en-IN", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
+                )}
               </div>
 
               {/* Status Filter */}
@@ -760,6 +886,51 @@ export default function ServiceReportSettlement() {
                   placeholder="Search transactions..."
                   className="h-9"
                 />
+                {searchTerm && (
+                  <p className="text-xs text-muted-foreground">
+                    Searching for: "{searchTerm}"
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Active Filter Status */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <Calendar className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-900">
+                  Active Filters Applied
+                </p>
+                <div className="mt-1 flex flex-wrap gap-2 text-xs text-blue-700">
+                  <span className="bg-blue-100 px-2 py-1 rounded">
+                    Date Range: {new Date(startDate).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })} - {new Date(endDate).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                  {statusFilter !== "ALL" && (
+                    <span className="bg-blue-100 px-2 py-1 rounded">
+                      Status: {statusFilter}
+                    </span>
+                  )}
+                  {searchTerm && (
+                    <span className="bg-blue-100 px-2 py-1 rounded">
+                      Search: "{searchTerm}"
+                    </span>
+                  )}
+                  {(startDate !== getTodayDate() || endDate !== getTodayDate()) && (
+                    <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded">
+                      Custom date range selected
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

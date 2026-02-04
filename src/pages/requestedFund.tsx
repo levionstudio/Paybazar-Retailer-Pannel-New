@@ -32,6 +32,7 @@ import {
   Filter,
   Loader2,
   X,
+  AlertCircle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -84,7 +85,7 @@ const GetFundRequests = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // Get today's date in YYYY-MM-DD format
+  /* -------------------- HELPER: Get Today's Date -------------------- */
   const getTodayDate = () => {
     return new Date().toISOString().split("T")[0];
   };
@@ -95,13 +96,24 @@ const GetFundRequests = () => {
 
   // Filter states - Initialize with today's date
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
   const [statusFilter, setStatusFilter] = useState("");
+  const [dateError, setDateError] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
   const [totalRecords, setTotalRecords] = useState(0);
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   /* -------------------- TOKEN VALIDATION -------------------- */
 
@@ -162,10 +174,120 @@ const GetFundRequests = () => {
     checkAuth();
   }, [toast, navigate]);
 
+  /* -------------------- DATE VALIDATION -------------------- */
+
+  const validateDates = (): boolean => {
+    setDateError("");
+
+    // If no dates are selected, validation passes
+    if (!startDate && !endDate) {
+      return true;
+    }
+
+    const today = new Date(getTodayDate());
+    today.setHours(0, 0, 0, 0);
+
+    // Validate start date
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+
+      if (start > today) {
+        setDateError("Start date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "Start date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate end date
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(0, 0, 0, 0);
+
+      if (end > today) {
+        setDateError("End date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "End date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate date range
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      if (start > end) {
+        setDateError("Start date cannot be after end date");
+        toast({
+          title: "Invalid Date Range",
+          description: "Start date cannot be after end date.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      // Optional: Check if date range is too large (e.g., more than 1 year)
+      const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysDifference > 365) {
+        setDateError("Date range cannot exceed 1 year");
+        toast({
+          title: "Invalid Date Range",
+          description: "Please select a date range within 1 year.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  /* -------------------- HANDLE DATE CHANGES -------------------- */
+
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    setDateError("");
+    
+    // If end date exists and new start date is after it, clear end date
+    if (value && endDate) {
+      const start = new Date(value);
+      const end = new Date(endDate);
+      if (start > end) {
+        setEndDate("");
+      }
+    }
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    setDateError("");
+    
+    // If start date exists and new end date is before it, clear start date
+    if (value && startDate) {
+      const start = new Date(startDate);
+      const end = new Date(value);
+      if (end < start) {
+        setStartDate("");
+      }
+    }
+  };
+
   /* -------------------- FETCH FUND REQUESTS -------------------- */
 
   const fetchRequests = async () => {
     if (!userId) return;
+
+    if (!validateDates()) return;
 
     const token = localStorage.getItem("authToken");
     if (!token) return;
@@ -183,21 +305,24 @@ const GetFundRequests = () => {
         offset: offset,
       };
 
-      // Add optional filters
+      // Add date filters with timestamps for proper filtering
       if (startDate) {
-        payload.start_date = new Date(startDate).toISOString();
+        payload.start_date = `${startDate}T00:00:00`;
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        payload.end_date = end.toISOString();
+        payload.end_date = `${endDate}T23:59:59`;
       }
       if (statusFilter && statusFilter !== "") {
         payload.status = statusFilter;
       }
+      
+      // Add search if present
+      if (debouncedSearchTerm && debouncedSearchTerm.trim()) {
+        payload.search = debouncedSearchTerm.trim();
+      }
 
       const { data } = await axios.post(
-       import.meta.env.VITE_API_BASE_URL + "/fund_request/get/requester",
+        import.meta.env.VITE_API_BASE_URL + "/fund_request/get/requester",
         payload,
         {
           headers: {
@@ -210,7 +335,21 @@ const GetFundRequests = () => {
       if (data.status === "success") {
         const raw: FundRequestRaw[] = data.data?.fund_requests || [];
 
-        const mapped: FundRequest[] = raw.map((req) => ({
+        // Client-side date filtering as additional safety
+        const filtered = raw.filter((req) => {
+          if (!startDate && !endDate) return true;
+          
+          const txDate = new Date(req.created_at);
+          const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+          const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+          
+          if (start && txDate < start) return false;
+          if (end && txDate > end) return false;
+          
+          return true;
+        });
+
+        const mapped: FundRequest[] = filtered.map((req) => ({
           id: req.fund_request_id,
           requesterId: req.requester_id,
           requestToId: req.request_to_id,
@@ -248,11 +387,11 @@ const GetFundRequests = () => {
   };
 
   useEffect(() => {
-    if (userId) {
+    if (userId && validateDates()) {
       fetchRequests();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, currentPage, entriesPerPage, startDate, endDate, statusFilter]);
+  }, [userId, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
 
   /* -------------------- CLEAR FILTERS -------------------- */
 
@@ -262,31 +401,22 @@ const GetFundRequests = () => {
     setEndDate(today);
     setStatusFilter("");
     setSearchTerm("");
+    setDateError("");
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = searchTerm || statusFilter;
-
-  /* -------------------- CLIENT-SIDE SEARCH -------------------- */
-
-  const filteredRequests = fundRequests.filter((request) => {
-    if (!searchTerm.trim()) return true;
-
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      request.utrNumber.toLowerCase().includes(searchLower) ||
-      request.bankName.toLowerCase().includes(searchLower) ||
-      request.remarks.toLowerCase().includes(searchLower) ||
-      request.adminRemarks?.toLowerCase().includes(searchLower) ||
-      request.status.toLowerCase().includes(searchLower) ||
-      request.amount.toString().includes(searchLower)
-    );
-  });
+  const hasActiveFilters = 
+    searchTerm || 
+    statusFilter || 
+    startDate !== getTodayDate() || 
+    endDate !== getTodayDate();
 
   /* -------------------- EXPORT TO EXCEL -------------------- */
 
-  const exportToExcel = () => {
-    if (filteredRequests.length === 0) {
+  const exportToExcel = async () => {
+    if (!userId) return;
+
+    if (totalRecords === 0) {
       toast({
         title: "No Data",
         description: "No fund requests to export",
@@ -295,19 +425,71 @@ const GetFundRequests = () => {
       return;
     }
 
+    if (!validateDates()) return;
+
     setIsExporting(true);
 
     try {
-      const exportData = filteredRequests.map((request, index) => ({
+      toast({
+        title: "Exporting",
+        description: "Fetching all data for export...",
+      });
+
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+
+      // Build payload for all data
+      const payload: any = {
+        id: userId,
+        limit: totalRecords,
+        offset: 0,
+      };
+
+      if (startDate) {
+        payload.start_date = `${startDate}T00:00:00`;
+      }
+      if (endDate) {
+        payload.end_date = `${endDate}T23:59:59`;
+      }
+      if (statusFilter && statusFilter !== "") {
+        payload.status = statusFilter;
+      }
+      if (debouncedSearchTerm && debouncedSearchTerm.trim()) {
+        payload.search = debouncedSearchTerm.trim();
+      }
+
+      const { data } = await axios.post(
+        import.meta.env.VITE_API_BASE_URL + "/fund_request/get/requester",
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      let allData: FundRequestRaw[] = data.data?.fund_requests || [];
+
+      if (allData.length === 0) {
+        toast({
+          title: "No Data",
+          description: "No fund requests to export",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const exportData = allData.map((req, index) => ({
         "S.No": index + 1,
-        "Date & Time": formatDateTime(request.createdAt),
-        "Request Date": formatDate(request.requestDate),
-        "Amount (₹)": request.amount.toFixed(2),
-        "Bank Name": request.bankName,
-        "UTR Number": request.utrNumber,
-        "User Remarks": request.remarks,
-        "Admin Remarks": request.adminRemarks || "-",
-        Status: request.status,
+        "Date & Time": formatDateTime(req.created_at),
+        "Request Date": formatDate(req.request_date),
+        "Amount (₹)": req.amount.toFixed(2),
+        "Bank Name": req.bank_name,
+        "UTR Number": req.utr_number,
+        "User Remarks": req.remarks,
+        "Admin Remarks": req.admin_remarks || "-",
+        Status: req.request_status,
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -333,8 +515,8 @@ const GetFundRequests = () => {
 
       toast({
         title: "Success",
-        description: `Exported ${filteredRequests.length} fund request${
-          filteredRequests.length > 1 ? "s" : ""
+        description: `Exported ${allData.length} fund request${
+          allData.length > 1 ? "s" : ""
         }`,
       });
     } catch (error) {
@@ -459,7 +641,7 @@ const GetFundRequests = () => {
                 <Button
                   onClick={exportToExcel}
                   className="bg-white text-primary hover:bg-white/90"
-                  disabled={loading || isExporting || filteredRequests.length === 0}
+                  disabled={loading || isExporting || fundRequests.length === 0}
                 >
                   <FileSpreadsheet
                     className={`h-4 w-4 mr-2 ${
@@ -504,6 +686,14 @@ const GetFundRequests = () => {
                   )}
                 </div>
 
+                {/* Date Error Alert */}
+                {dateError && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                    <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                    <p className="text-sm text-red-700 font-medium">{dateError}</p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Start Date */}
                   <div className="space-y-2">
@@ -515,11 +705,21 @@ const GetFundRequests = () => {
                       type="date"
                       value={startDate}
                       onChange={(e) => {
-                        setStartDate(e.target.value);
+                        handleStartDateChange(e.target.value);
                         setCurrentPage(1);
                       }}
-                      className="h-9"
+                      max={getTodayDate()}
+                      className={`h-9 ${dateError && startDate ? "border-red-500" : ""}`}
                     />
+                    {startDate && (
+                      <p className="text-xs text-muted-foreground">
+                        From: {new Date(startDate).toLocaleDateString("en-IN", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </p>
+                    )}
                   </div>
 
                   {/* End Date */}
@@ -532,12 +732,22 @@ const GetFundRequests = () => {
                       type="date"
                       value={endDate}
                       onChange={(e) => {
-                        setEndDate(e.target.value);
+                        handleEndDateChange(e.target.value);
                         setCurrentPage(1);
                       }}
-                      min={startDate}
-                      className="h-9"
+                      min={startDate || undefined}
+                      max={getTodayDate()}
+                      className={`h-9 ${dateError && endDate ? "border-red-500" : ""}`}
                     />
+                    {endDate && (
+                      <p className="text-xs text-muted-foreground">
+                        To: {new Date(endDate).toLocaleDateString("en-IN", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </p>
+                    )}
                   </div>
 
                   {/* Status Filter */}
@@ -567,14 +777,64 @@ const GetFundRequests = () => {
                     <Label className="text-sm font-medium">Search</Label>
                     <Input
                       value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        setCurrentPage(1);
+                      }}
                       placeholder="Search UTR, bank, remarks..."
                       className="h-9"
                     />
+                    {searchTerm && (
+                      <p className="text-xs text-muted-foreground">
+                        Searching for: "{searchTerm}"
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Active Filter Status */}
+            {hasActiveFilters && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+                <div className="flex items-start gap-2">
+                  <Calendar className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-blue-900">
+                      Active Filters Applied
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-blue-700">
+                      <span className="bg-blue-100 px-2 py-1 rounded">
+                        Date Range: {new Date(startDate).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })} - {new Date(endDate).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                      {statusFilter && (
+                        <span className="bg-blue-100 px-2 py-1 rounded">
+                          Status: {statusFilter}
+                        </span>
+                      )}
+                      {searchTerm && (
+                        <span className="bg-blue-100 px-2 py-1 rounded">
+                          Search: "{searchTerm}"
+                        </span>
+                      )}
+                      {(startDate !== getTodayDate() || endDate !== getTodayDate()) && (
+                        <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded">
+                          Custom date range selected
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Table Section */}
@@ -604,7 +864,7 @@ const GetFundRequests = () => {
                   <span className="text-sm font-medium text-gray-700">entries</span>
                 </div>
                 <div className="text-sm text-gray-700">
-                  Showing {filteredRequests.length > 0 ? ((currentPage - 1) * entriesPerPage) + 1 : 0} to{" "}
+                  Showing {totalRecords > 0 ? ((currentPage - 1) * entriesPerPage) + 1 : 0} to{" "}
                   {Math.min(currentPage * entriesPerPage, totalRecords)} of {totalRecords} entries
                 </div>
               </div>
@@ -618,7 +878,7 @@ const GetFundRequests = () => {
                       Loading fund requests...
                     </p>
                   </div>
-                ) : filteredRequests.length === 0 ? (
+                ) : fundRequests.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20">
                     <FileText className="h-12 w-12 text-muted-foreground mb-4" />
                     <p className="text-lg font-semibold text-gray-900">
@@ -658,14 +918,13 @@ const GetFundRequests = () => {
                         <TableHead className="text-center text-xs font-semibold uppercase text-gray-700 whitespace-nowrap px-4">
                           Admin Remarks
                         </TableHead>
-                        
                         <TableHead className="text-center text-xs font-semibold uppercase text-gray-700 whitespace-nowrap px-4">
                           Status
                         </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredRequests.map((request, idx) => (
+                      {fundRequests.map((request, idx) => (
                         <TableRow
                           key={request.id}
                           className={`border-b hover:bg-gray-50 ${
@@ -704,9 +963,9 @@ const GetFundRequests = () => {
                           <TableCell className="py-3 px-4 text-center text-sm text-gray-600">
                             <div
                               className="max-w-[200px] mx-auto truncate"
-                              title={request.rejectRemarks}
+                              title={request.adminRemarks || request.rejectRemarks}
                             >
-                              {request.rejectRemarks || "-"}
+                              {request.adminRemarks || request.rejectRemarks || "-"}
                             </div>
                           </TableCell>
                           <TableCell className="py-3 px-4 text-center whitespace-nowrap">

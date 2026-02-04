@@ -6,39 +6,30 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCw, FileSpreadsheet, Filter } from "lucide-react";
+import { RefreshCw, FileSpreadsheet, Filter, Calendar, AlertCircle, X } from "lucide-react";
 import * as XLSX from "xlsx";
 
 interface PayoutTransaction {
   payout_transaction_id: string;
-
   operator_transaction_id: string | null;
   order_id: string;
   partner_request_id: string;
-
   mobile_number: string;
-
   bank_name: string;
   beneficiary_name: string;
   account_number: string;
   ifsc_code: string;
-
   amount: number;
   transfer_type: string;
-
   retailer_commision: number;
-
   retailer_id: string;
   retailer_name: string;
   retailer_business_name: string;
-
-  before_balance: number;   // 🔥 NEW
-  after_balance: number;    // 🔥 NEW
-
+  before_balance: number;
+  after_balance: number;
   transaction_status: string;
   created_at: string;
 }
-
 
 interface SettlementLedgerProps {
   userId: string;
@@ -47,6 +38,7 @@ interface SettlementLedgerProps {
 export default function SettlementLedger({ userId }: SettlementLedgerProps) {
   const { toast } = useToast();
   
+  /* -------------------- HELPER: Get Today's Date -------------------- */
   const getTodayDate = () => new Date().toISOString().split("T")[0];
   
   const [transactions, setTransactions] = useState<PayoutTransaction[]>([]);
@@ -55,22 +47,166 @@ export default function SettlementLedger({ userId }: SettlementLedgerProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
+  const [dateError, setDateError] = useState<string>("");
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  /* -------------------- DATE VALIDATION -------------------- */
+
+  const validateDates = (): boolean => {
+    setDateError("");
+
+    // If no dates are selected, validation passes
+    if (!startDate && !endDate) {
+      return true;
+    }
+
+    const today = new Date(getTodayDate());
+    today.setHours(0, 0, 0, 0);
+
+    // Validate start date
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+
+      if (start > today) {
+        setDateError("Start date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "Start date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate end date
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(0, 0, 0, 0);
+
+      if (end > today) {
+        setDateError("End date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "End date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate date range
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      if (start > end) {
+        setDateError("Start date cannot be after end date");
+        toast({
+          title: "Invalid Date Range",
+          description: "Start date cannot be after end date.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      // Optional: Check if date range is too large (e.g., more than 1 year)
+      const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysDifference > 365) {
+        setDateError("Date range cannot exceed 1 year");
+        toast({
+          title: "Invalid Date Range",
+          description: "Please select a date range within 1 year.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  /* -------------------- HANDLE DATE CHANGES -------------------- */
+
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    setDateError("");
+    
+    // If end date exists and new start date is after it, clear end date
+    if (value && endDate) {
+      const start = new Date(value);
+      const end = new Date(endDate);
+      if (start > end) {
+        setEndDate("");
+      }
+    }
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    setDateError("");
+    
+    // If start date exists and new end date is before it, clear start date
+    if (value && startDate) {
+      const start = new Date(startDate);
+      const end = new Date(value);
+      if (end < start) {
+        setStartDate("");
+      }
+    }
+  };
 
   const buildQueryParams = (params: any) => {
     const queryParams = new URLSearchParams();
-    if (params.limit) queryParams.append("limit", params.limit.toString());
-    if (params.offset !== undefined) queryParams.append("offset", params.offset.toString());
-    if (params.start_date) queryParams.append("start_date", params.start_date);
-    if (params.end_date) queryParams.append("end_date", params.end_date);
-    if (params.status && params.status !== "ALL") queryParams.append("status", params.status);
+    
+    // Always add limit and offset
+    if (params.limit !== undefined) {
+      queryParams.append("limit", params.limit.toString());
+    }
+    if (params.offset !== undefined) {
+      queryParams.append("offset", params.offset.toString());
+    }
+    
+    // Add date params with timestamps for proper filtering
+    if (params.start_date && params.start_date.trim()) {
+      queryParams.append("start_date", `${params.start_date.trim()}T00:00:00`);
+    }
+    if (params.end_date && params.end_date.trim()) {
+      queryParams.append("end_date", `${params.end_date.trim()}T23:59:59`);
+    }
+    
+    // Add status if not ALL
+    if (params.status && params.status !== "ALL") {
+      queryParams.append("status", params.status);
+    }
+    
+    // Add search if present
+    if (params.search && params.search.trim()) {
+      queryParams.append("search", params.search.trim());
+    }
+    
     return queryParams.toString();
   };
 
   const fetchTransactions = async () => {
     if (!userId) return;
+    
+    if (!validateDates()) return;
+    
     const token = localStorage.getItem("authToken");
     setLoading(true);
 
@@ -82,6 +218,7 @@ export default function SettlementLedger({ userId }: SettlementLedgerProps) {
         start_date: startDate,
         end_date: endDate,
         status: statusFilter,
+        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
@@ -90,11 +227,27 @@ export default function SettlementLedger({ userId }: SettlementLedgerProps) {
       );
 
       if (response.data?.status === "success" && Array.isArray(response.data.data?.transactions)) {
-        console.log("Settlement Transactions:", response.data.data.transactions);
-        const sorted = response.data.data.transactions.sort(
+        const raw: PayoutTransaction[] = response.data.data.transactions || [];
+        
+        // Client-side date filtering as additional safety
+        const filtered = raw.filter((tx) => {
+          if (!startDate && !endDate) return true;
+          
+          const txDate = new Date(tx.created_at);
+          const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+          const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+          
+          if (start && txDate < start) return false;
+          if (end && txDate > end) return false;
+          
+          return true;
+        });
+        
+        const sorted = filtered.sort(
           (a: PayoutTransaction, b: PayoutTransaction) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
+        
         setTransactions(sorted);
         setTotalRecords(response.data.data?.total || sorted.length);
       } else {
@@ -115,8 +268,11 @@ export default function SettlementLedger({ userId }: SettlementLedgerProps) {
   };
 
   useEffect(() => {
-    if (userId) fetchTransactions();
-  }, [userId, currentPage, entriesPerPage, startDate, endDate, statusFilter]);
+    if (userId && validateDates()) {
+      fetchTransactions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "-";
@@ -145,59 +301,128 @@ export default function SettlementLedger({ userId }: SettlementLedgerProps) {
     }
   };
 
-const getTransferTypeName = (transferType: string) => {
-  switch (transferType) {
-    case "5":
-    case "IMPS":
-      return "IMPS";
-    case "6":
-    case "NEFT":
-      return "NEFT";
-    default:
-      return transferType;
-  }
-};
+  const getTransferTypeName = (transferType: string) => {
+    switch (transferType) {
+      case "5":
+      case "IMPS":
+        return "IMPS";
+      case "6":
+      case "NEFT":
+        return "NEFT";
+      default:
+        return transferType;
+    }
+  };
 
+  const exportToExcel = async () => {
+    if (!userId) return;
 
-  const exportToExcel = () => {
-    if (transactions.length === 0) {
-      toast({ title: "No Data", description: "No transactions to export", variant: "destructive" });
+    if (totalRecords === 0) {
+      toast({ 
+        title: "No Data", 
+        description: "No transactions to export", 
+        variant: "destructive" 
+      });
       return;
     }
 
- const exportData = transactions.map((tx, i) => ({
-  "S.No": i + 1,
-  "Transaction ID": tx.operator_transaction_id || "-",
-  "Order ID": tx.order_id,
-  "Partner Request ID": tx.partner_request_id,
+    if (!validateDates()) return;
 
-  "Date & Time": formatDate(tx.created_at),
+    try {
+      toast({
+        title: "Exporting",
+        description: "Fetching all data for export...",
+      });
 
-  "Retailer ID": tx.retailer_id,
-  "Retailer Name": tx.retailer_name,
-  "Business Name": tx.retailer_business_name,
+      const token = localStorage.getItem("authToken");
+      const queryString = buildQueryParams({
+        limit: totalRecords,
+        offset: 0,
+        start_date: startDate,
+        end_date: endDate,
+        status: statusFilter,
+        search: debouncedSearchTerm,
+      });
 
-  "Phone": `'${tx.mobile_number}`,
-  "Bank Name": tx.bank_name,
-  "Beneficiary": tx.beneficiary_name,
-  "Account Number": `'${tx.account_number}`,
-  "IFSC": tx.ifsc_code,
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_BASE_URL}/payout/get/${userId}?${queryString}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-  "Before Balance (₹)": tx.before_balance.toFixed(2),
-  "Amount (₹)": tx.amount.toFixed(2),
-  "After Balance (₹)": tx.after_balance.toFixed(2),
+      let allData: PayoutTransaction[] = response.data?.data?.transactions || [];
 
-  "Transfer Type": tx.transfer_type,
-  "Commission (₹)": (tx.retailer_commision || 0).toFixed(2),
-  Status: tx.transaction_status,
-}));
+      if (allData.length === 0) {
+        toast({
+          title: "No Data",
+          description: "No transactions to export",
+          variant: "destructive",
+        });
+        return;
+      }
 
+      const exportData = allData.map((tx, i) => ({
+        "S.No": i + 1,
+        "Transaction ID": tx.operator_transaction_id || "-",
+        "Order ID": tx.order_id,
+        "Partner Request ID": tx.partner_request_id,
+        "Date & Time": formatDate(tx.created_at),
+        "Retailer ID": tx.retailer_id,
+        "Retailer Name": tx.retailer_name,
+        "Business Name": tx.retailer_business_name,
+        "Phone": tx.mobile_number,
+        "Bank Name": tx.bank_name,
+        "Beneficiary": tx.beneficiary_name,
+        "Account Number": tx.account_number,
+        "IFSC": tx.ifsc_code,
+        "Before Balance (₹)": tx.before_balance.toFixed(2),
+        "Amount (₹)": tx.amount.toFixed(2),
+        "After Balance (₹)": tx.after_balance.toFixed(2),
+        "Transfer Type": getTransferTypeName(tx.transfer_type),
+        "Commission (₹)": (tx.retailer_commision || 0).toFixed(2),
+        Status: tx.transaction_status,
+      }));
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Settlement");
-    XLSX.writeFile(workbook, `Settlement_${new Date().toISOString().split("T")[0]}.xlsx`);
-    toast({ title: "Success", description: `Exported ${transactions.length} transactions` });
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Settlement");
+      
+      // Set column widths
+      worksheet["!cols"] = [
+        { wch: 8 },  // S.No
+        { wch: 25 }, // Transaction ID
+        { wch: 20 }, // Order ID
+        { wch: 25 }, // Partner Request ID
+        { wch: 20 }, // Date & Time
+        { wch: 15 }, // Retailer ID
+        { wch: 20 }, // Retailer Name
+        { wch: 25 }, // Business Name
+        { wch: 15 }, // Phone
+        { wch: 20 }, // Bank Name
+        { wch: 20 }, // Beneficiary
+        { wch: 18 }, // Account Number
+        { wch: 15 }, // IFSC
+        { wch: 15 }, // Before Balance
+        { wch: 15 }, // Amount
+        { wch: 15 }, // After Balance
+        { wch: 15 }, // Transfer Type
+        { wch: 12 }, // Commission
+        { wch: 12 }, // Status
+      ];
+      
+      XLSX.writeFile(workbook, `Settlement_${new Date().toISOString().split("T")[0]}.xlsx`);
+      
+      toast({ 
+        title: "Success", 
+        description: `Exported ${allData.length} transactions` 
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      toast({
+        title: "Export Failed",
+        description: "Unable to export transactions",
+        variant: "destructive",
+      });
+    }
   };
 
   const clearFilters = () => {
@@ -205,25 +430,15 @@ const getTransferTypeName = (transferType: string) => {
     setStatusFilter("ALL");
     setStartDate(getTodayDate());
     setEndDate(getTodayDate());
+    setDateError("");
     setCurrentPage(1);
   };
 
-  const filteredTransactions = transactions.filter((tx) => {
-    if (!searchTerm.trim()) return true;
-    const searchLower = searchTerm.toLowerCase();
-   return (
-  (tx.operator_transaction_id && tx.operator_transaction_id.includes(searchLower)) ||
-  tx.mobile_number.includes(searchLower) ||
-  tx.bank_name.toLowerCase().includes(searchLower) ||
-  tx.beneficiary_name.toLowerCase().includes(searchLower) ||
-  tx.account_number.includes(searchLower) ||
-  tx.retailer_id.toLowerCase().includes(searchLower) ||
-  tx.retailer_name.toLowerCase().includes(searchLower) ||
-  tx.retailer_business_name.toLowerCase().includes(searchLower) ||
-  tx.transaction_status.toLowerCase().includes(searchLower)
-);
-
-  });
+  const hasActiveFilters = 
+    searchTerm || 
+    statusFilter !== "ALL" || 
+    startDate !== getTodayDate() || 
+    endDate !== getTodayDate();
 
   const totalPages = Math.ceil(totalRecords / entriesPerPage);
 
@@ -236,12 +451,26 @@ const getTransferTypeName = (transferType: string) => {
             <Filter className="h-5 w-5 text-gray-600" />
             <h2 className="text-lg font-semibold">Filters</h2>
           </div>
-          {(searchTerm || statusFilter !== "ALL" || startDate !== getTodayDate() || endDate !== getTodayDate()) && (
-            <Button variant="outline" size="sm" onClick={clearFilters} className="text-red-600 hover:bg-red-50">
+          {hasActiveFilters && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={clearFilters} 
+              className="text-red-600 hover:bg-red-50"
+            >
+              <X className="h-4 w-4 mr-1" />
               Clear All Filters
             </Button>
           )}
         </div>
+
+        {/* Date Error Alert */}
+        {dateError && (
+          <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+            <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+            <p className="text-sm text-red-700 font-medium">{dateError}</p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2">
@@ -250,12 +479,21 @@ const getTransferTypeName = (transferType: string) => {
               type="date"
               value={startDate}
               onChange={(e) => {
-                setStartDate(e.target.value);
+                handleStartDateChange(e.target.value);
                 setCurrentPage(1);
               }}
-              max={endDate || getTodayDate()}
-              className="h-9"
+              max={getTodayDate()}
+              className={`h-9 ${dateError && startDate ? "border-red-500" : ""}`}
             />
+            {startDate && (
+              <p className="text-xs text-muted-foreground">
+                From: {new Date(startDate).toLocaleDateString("en-IN", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -264,13 +502,22 @@ const getTransferTypeName = (transferType: string) => {
               type="date"
               value={endDate}
               onChange={(e) => {
-                setEndDate(e.target.value);
+                handleEndDateChange(e.target.value);
                 setCurrentPage(1);
               }}
-              min={startDate}
+              min={startDate || undefined}
               max={getTodayDate()}
-              className="h-9"
+              className={`h-9 ${dateError && endDate ? "border-red-500" : ""}`}
             />
+            {endDate && (
+              <p className="text-xs text-muted-foreground">
+                To: {new Date(endDate).toLocaleDateString("en-IN", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -299,10 +546,58 @@ const getTransferTypeName = (transferType: string) => {
             <Input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search transactions..."
               className="h-9"
             />
+            {searchTerm && (
+              <p className="text-xs text-muted-foreground">
+                Searching for: "{searchTerm}"
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Active Filter Status */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+        <div className="flex items-start gap-2">
+          <Calendar className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-blue-900">
+              Active Filters Applied
+            </p>
+            <div className="mt-1 flex flex-wrap gap-2 text-xs text-blue-700">
+              <span className="bg-blue-100 px-2 py-1 rounded">
+                Date Range: {new Date(startDate).toLocaleDateString("en-IN", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })} - {new Date(endDate).toLocaleDateString("en-IN", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </span>
+              {statusFilter !== "ALL" && (
+                <span className="bg-blue-100 px-2 py-1 rounded">
+                  Status: {statusFilter}
+                </span>
+              )}
+              {searchTerm && (
+                <span className="bg-blue-100 px-2 py-1 rounded">
+                  Search: "{searchTerm}"
+                </span>
+              )}
+              {(startDate !== getTodayDate() || endDate !== getTodayDate()) && (
+                <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded">
+                  Custom date range selected
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -333,13 +628,24 @@ const getTransferTypeName = (transferType: string) => {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-600">
-              (Showing {filteredTransactions.length} of {totalRecords} records)
+              Showing {totalRecords > 0 ? (currentPage - 1) * entriesPerPage + 1 : 0} to{" "}
+              {Math.min(currentPage * entriesPerPage, totalRecords)} of {totalRecords} records
             </div>
-            <Button onClick={exportToExcel} disabled={filteredTransactions.length === 0} variant="outline" size="sm">
+            <Button 
+              onClick={exportToExcel} 
+              disabled={transactions.length === 0} 
+              variant="outline" 
+              size="sm"
+            >
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Export
             </Button>
-            <Button onClick={fetchTransactions} disabled={loading} variant="outline" size="sm">
+            <Button 
+              onClick={fetchTransactions} 
+              disabled={loading} 
+              variant="outline" 
+              size="sm"
+            >
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
@@ -350,62 +656,71 @@ const getTransferTypeName = (transferType: string) => {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
-                <TableHead className="text-center">DATE & TIME</TableHead>
-                <TableHead className="text-center">TRANSACTION ID</TableHead>
-                <TableHead className="text-center">PHONE</TableHead>
-                <TableHead className="text-center">BANK NAME</TableHead>
-                <TableHead className="text-center">BENEFICIARY</TableHead>
-                <TableHead className="text-center">ACCOUNT NO.</TableHead>
-                <TableHead className="text-center">AMOUNT (₹)</TableHead>
-                <TableHead className="text-center">BEFORE BAL (₹)</TableHead>
-<TableHead className="text-center">AFTER BAL (₹)</TableHead>
-
-                <TableHead className="text-center">TYPE</TableHead>
-                <TableHead className="text-center">COMMISSION (₹)</TableHead>
-                <TableHead className="text-center">STATUS</TableHead>
+                <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
+                <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
+                <TableHead className="text-center whitespace-nowrap">PHONE</TableHead>
+                <TableHead className="text-center whitespace-nowrap">BANK NAME</TableHead>
+                <TableHead className="text-center whitespace-nowrap">BENEFICIARY</TableHead>
+                <TableHead className="text-center whitespace-nowrap">ACCOUNT NO.</TableHead>
+                <TableHead className="text-center whitespace-nowrap">AMOUNT (₹)</TableHead>
+                <TableHead className="text-center whitespace-nowrap">BEFORE BAL (₹)</TableHead>
+                <TableHead className="text-center whitespace-nowrap">AFTER BAL (₹)</TableHead>
+                <TableHead className="text-center whitespace-nowrap">TYPE</TableHead>
+                <TableHead className="text-center whitespace-nowrap">COMMISSION (₹)</TableHead>
+                <TableHead className="text-center whitespace-nowrap">STATUS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-12">
+                  <TableCell colSpan={12} className="text-center py-12">
                     <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-2" />
                     <p className="text-gray-500">Loading transactions...</p>
                   </TableCell>
                 </TableRow>
-              ) : filteredTransactions.length === 0 ? (
+              ) : transactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-12">
+                  <TableCell colSpan={12} className="text-center py-12">
                     <p className="text-gray-500 font-medium">No transactions found</p>
                     <p className="text-sm text-gray-400">
-                      {searchTerm || statusFilter !== "ALL" ? "Try adjusting your filters" : "Your settlement transactions will appear here"}
+                      {hasActiveFilters
+                        ? "Try adjusting your filters"
+                        : "Your settlement transactions will appear here"}
                     </p>
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredTransactions.map((transaction) => (
+                transactions.map((transaction) => (
                   <TableRow key={transaction.payout_transaction_id}>
-                    <TableCell className="text-center">{formatDate(transaction.created_at)}</TableCell>
-                    <TableCell className="text-center font-mono text-xs">{transaction.operator_transaction_id || "-"}</TableCell>
+                    <TableCell className="text-center whitespace-nowrap">
+                      {formatDate(transaction.created_at)}
+                    </TableCell>
+                    <TableCell className="text-center font-mono text-xs">
+                      {transaction.operator_transaction_id || "-"}
+                    </TableCell>
                     <TableCell className="text-center">{transaction.mobile_number}</TableCell>
                     <TableCell className="text-center">{transaction.bank_name}</TableCell>
                     <TableCell className="text-center">{transaction.beneficiary_name}</TableCell>
-                    <TableCell className="text-center font-mono text-xs">{transaction.account_number}</TableCell>
-                    <TableCell className="text-center font-semibold">₹{formatAmount(transaction.amount)}</TableCell>
-                    <TableCell className="text-center">
-  ₹{formatAmount(transaction.before_balance)}
-</TableCell>
-
-<TableCell className="text-center font-semibold">
-  ₹{formatAmount(transaction.after_balance)}
-</TableCell>
-
+                    <TableCell className="text-center font-mono text-xs">
+                      {transaction.account_number}
+                    </TableCell>
+                    <TableCell className="text-center font-semibold">
+                      ₹{formatAmount(transaction.amount)}
+                    </TableCell>
+                    <TableCell className="text-center font-semibold">
+                      ₹{formatAmount(transaction.before_balance)}
+                    </TableCell>
+                    <TableCell className="text-center font-semibold">
+                      ₹{formatAmount(transaction.after_balance)}
+                    </TableCell>
                     <TableCell className="text-center">
                       <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
                         {getTransferTypeName(transaction.transfer_type)}
                       </span>
                     </TableCell>
-                    <TableCell className="text-center">₹{formatAmount(transaction.retailer_commision || 0)}</TableCell>
+                    <TableCell className="text-center font-semibold text-green-600">
+                      ₹{formatAmount(transaction.retailer_commision || 0)}
+                    </TableCell>
                     <TableCell className="text-center">
                       <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(transaction.transaction_status)}`}>
                         {transaction.transaction_status}

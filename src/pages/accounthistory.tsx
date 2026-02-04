@@ -30,6 +30,7 @@ import {
   Calendar,
   Loader2,
   X,
+  AlertCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
@@ -86,16 +87,16 @@ const UserWalletTransactions = () => {
     return new Date().toISOString().split("T")[0];
   };
 
-
   const [userId, setUserId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Filters
+  // Filters - Set today's date as default
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
+  const [dateError, setDateError] = useState<string>("");
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -105,9 +106,6 @@ const UserWalletTransactions = () => {
   const [isExporting, setIsExporting] = useState(false);
 
   /* -------------------- TOKEN VALIDATION -------------------- */
-
-  /* -------------------- HELPER: Get Today's Date -------------------- */
-
 
   useEffect(() => {
     const token = localStorage.getItem("authToken");
@@ -162,14 +160,60 @@ const UserWalletTransactions = () => {
     }
   }, [navigate, toast]);
 
-  /* -------------------- VALIDATE DATES -------------------- */
+  /* -------------------- DATE VALIDATION -------------------- */
 
   const validateDates = (): boolean => {
+    setDateError("");
+
+    // If no dates are selected, validation passes
+    if (!startDate && !endDate) {
+      return true;
+    }
+
+    const today = new Date(getTodayDate());
+    today.setHours(0, 0, 0, 0);
+
+    // Validate start date
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+
+      if (start > today) {
+        setDateError("Start date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "Start date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate end date
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(0, 0, 0, 0);
+
+      if (end > today) {
+        setDateError("End date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "End date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate date range
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
       if (start > end) {
+        setDateError("Start date cannot be after end date");
         toast({
           title: "Invalid Date Range",
           description: "Start date cannot be after end date.",
@@ -178,18 +222,50 @@ const UserWalletTransactions = () => {
         return false;
       }
 
-      const today = new Date(getTodayDate());
-      if (start > today || end > today) {
+      // Optional: Check if date range is too large (e.g., more than 1 year)
+      const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysDifference > 365) {
+        setDateError("Date range cannot exceed 1 year");
         toast({
-          title: "Invalid Date",
-          description: "Dates cannot be in the future.",
+          title: "Invalid Date Range",
+          description: "Please select a date range within 1 year.",
           variant: "destructive",
         });
         return false;
       }
     }
-    
+
     return true;
+  };
+
+  /* -------------------- HANDLE DATE CHANGES -------------------- */
+
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    setDateError("");
+    
+    // If end date exists and new start date is after it, clear end date
+    if (value && endDate) {
+      const start = new Date(value);
+      const end = new Date(endDate);
+      if (start > end) {
+        setEndDate("");
+      }
+    }
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    setDateError("");
+    
+    // If start date exists and new end date is before it, clear start date
+    if (value && startDate) {
+      const start = new Date(startDate);
+      const end = new Date(value);
+      if (end < start) {
+        setStartDate("");
+      }
+    }
   };
 
   /* -------------------- FETCH TRANSACTIONS WITH LIMIT/OFFSET -------------------- */
@@ -238,12 +314,15 @@ const UserWalletTransactions = () => {
         params.append("search", searchTerm.trim());
       }
 
+      // Always send date filters (required for proper filtering)
       if (startDate) {
-        params.append("start_date", startDate);
+        // Send start of day for start_date
+        params.append("start_date", `${startDate}T00:00:00`);
       }
 
       if (endDate) {
-        params.append("end_date", endDate);
+        // Send end of day for end_date
+        params.append("end_date", `${endDate}T23:59:59`);
       }
 
       const res = await axios.get(
@@ -259,33 +338,40 @@ const UserWalletTransactions = () => {
         const raw: WalletTransactionRaw[] = res.data?.data?.transactions || [];
         const total = res.data?.data?.total || raw.length;
 
-        const mapped: WalletTransaction[] = raw.map((tx) => {
-          const isCredit = !!tx.credit_amount;
+        const mapped: WalletTransaction[] = raw
+          .map((tx) => {
+            const isCredit = !!tx.credit_amount;
 
-          return {
-            id: tx.wallet_transaction_id,
-            type: isCredit ? "CREDIT" : "DEBIT",
-            amount: parseFloat(tx.credit_amount || tx.debit_amount || "0"),
-            reason: tx.transaction_reason,
-            remarks: tx.remarks,
-            beforeBalance: parseFloat(tx.before_balance),
-            afterBalance: parseFloat(tx.after_balance),
-            createdAt: tx.created_at,
-          };
-        });
+            return {
+              id: tx.wallet_transaction_id,
+              type: isCredit ? "CREDIT" : "DEBIT",
+              amount: parseFloat(tx.credit_amount || tx.debit_amount || "0"),
+              reason: tx.transaction_reason,
+              remarks: tx.remarks,
+              beforeBalance: parseFloat(tx.before_balance),
+              afterBalance: parseFloat(tx.after_balance),
+              createdAt: tx.created_at,
+            };
+          })
+          .filter((tx) => {
+            // Client-side date filtering as additional safety
+            if (!startDate && !endDate) return true;
+            
+            const txDate = new Date(tx.createdAt);
+            const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+            const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+            
+            if (start && txDate < start) return false;
+            if (end && txDate > end) return false;
+            
+            return true;
+          });
 
         setTransactions(mapped);
         setTotalCount(total);
 
         if (resetPage) {
           setCurrentPage(1);
-        }
-
-        if (mapped.length > 0) {
-          toast({
-            title: "Success",
-            description: `Loaded ${mapped.length} of ${total} transaction${total > 1 ? 's' : ''}`,
-          });
         }
       } else {
         setTransactions([]);
@@ -305,13 +391,25 @@ const UserWalletTransactions = () => {
     }
   };
 
-  // Fetch on mount and when dependencies change
+  // Debounce search term
   useEffect(() => {
-    if (userId) {
+    const timer = setTimeout(() => {
+      if (userId) {
+        fetchTransactions(true);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, searchTerm]);
+
+  // Fetch when dates or entries per page change
+  useEffect(() => {
+    if (userId && validateDates()) {
       fetchTransactions(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, searchTerm, startDate, endDate, entriesPerPage]);
+  }, [userId, startDate, endDate, entriesPerPage]);
 
   // Fetch when page changes
   useEffect(() => {
@@ -325,12 +423,13 @@ const UserWalletTransactions = () => {
 
   const clearAllFilters = () => {
     setSearchTerm("");
-    setStartDate("");
-    setEndDate("");
+    setStartDate(getTodayDate());
+    setEndDate(getTodayDate());
+    setDateError("");
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = searchTerm || startDate || endDate;
+  const hasActiveFilters = searchTerm || startDate !== getTodayDate() || endDate !== getTodayDate();
 
   /* -------------------- EXPORT TO EXCEL (ALL DATA) -------------------- */
 
@@ -345,6 +444,8 @@ const UserWalletTransactions = () => {
       });
       return;
     }
+
+    if (!validateDates()) return;
 
     setIsExporting(true);
 
@@ -361,12 +462,13 @@ const UserWalletTransactions = () => {
         params.append("search", searchTerm.trim());
       }
 
+      // Always send date filters with timestamps
       if (startDate) {
-        params.append("start_date", startDate);
+        params.append("start_date", `${startDate}T00:00:00`);
       }
 
       if (endDate) {
-        params.append("end_date", endDate);
+        params.append("end_date", `${endDate}T23:59:59`);
       }
 
       const res = await axios.get(
@@ -577,6 +679,14 @@ const UserWalletTransactions = () => {
                   )}
                 </div>
 
+                {/* Date Error Alert */}
+                {dateError && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                    <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                    <p className="text-sm text-red-700 font-medium">{dateError}</p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Search */}
                   <div className="space-y-2">
@@ -587,6 +697,11 @@ const UserWalletTransactions = () => {
                       placeholder="Search by ID, reason, remarks..."
                       className="h-9"
                     />
+                    {searchTerm && (
+                      <p className="text-xs text-muted-foreground">
+                        Searching for: "{searchTerm}"
+                      </p>
+                    )}
                   </div>
 
                   {/* Start Date */}
@@ -595,10 +710,19 @@ const UserWalletTransactions = () => {
                     <Input
                       type="date"
                       value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      max={endDate || getTodayDate()}
-                      className="h-9"
+                      onChange={(e) => handleStartDateChange(e.target.value)}
+                      max={getTodayDate()}
+                      className={`h-9 ${dateError && startDate ? "border-red-500" : ""}`}
                     />
+                    {startDate && (
+                      <p className="text-xs text-muted-foreground">
+                        From: {new Date(startDate).toLocaleDateString("en-IN", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </p>
+                    )}
                   </div>
 
                   {/* End Date */}
@@ -607,11 +731,55 @@ const UserWalletTransactions = () => {
                     <Input
                       type="date"
                       value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      min={startDate}
+                      onChange={(e) => handleEndDateChange(e.target.value)}
+                      min={startDate || undefined}
                       max={getTodayDate()}
-                      className="h-9"
+                      className={`h-9 ${dateError && endDate ? "border-red-500" : ""}`}
                     />
+                    {endDate && (
+                      <p className="text-xs text-muted-foreground">
+                        To: {new Date(endDate).toLocaleDateString("en-IN", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Active Filter Status */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+              <div className="flex items-start gap-2">
+                <Calendar className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-blue-900">
+                    Active Filters Applied
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-blue-700">
+                    <span className="bg-blue-100 px-2 py-1 rounded">
+                      Date Range: {new Date(startDate).toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })} - {new Date(endDate).toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                    {searchTerm && (
+                      <span className="bg-blue-100 px-2 py-1 rounded">
+                        Search: "{searchTerm}"
+                      </span>
+                    )}
+                    {(startDate !== getTodayDate() || endDate !== getTodayDate()) && (
+                      <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded">
+                        Custom date range selected
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
