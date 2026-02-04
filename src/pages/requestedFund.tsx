@@ -52,9 +52,10 @@ interface FundRequestRaw {
   requester_id: string;
   request_to_id: string;
   amount: number;
-  bank_name: string;
+  bank_name: string | null;
   request_date: string;
-  utr_number: string;
+  utr_number: string | null;
+  request_type: string;
   request_status: string;
   remarks: string;
   admin_remarks?: string;
@@ -68,9 +69,10 @@ interface FundRequest {
   requesterId: string;
   requestToId: string;
   amount: number;
-  bankName: string;
+  bankName: string | null;
   requestDate: string;
-  utrNumber: string;
+  utrNumber: string | null;
+  requestType: string;
   status: string;
   remarks: string;
   rejectRemarks: string;
@@ -295,34 +297,24 @@ const GetFundRequests = () => {
     try {
       setLoading(true);
 
-      // Calculate offset for pagination
-      const offset = (currentPage - 1) * entriesPerPage;
-
-      // Build payload
+      // Build payload according to GetFundRequestFilterRequestModel
       const payload: any = {
-        id: userId,
-        limit: entriesPerPage,
-        offset: offset,
+        id: userId, // Required field
       };
 
-      // Add date filters with timestamps for proper filtering
+      // Add optional filters
       if (startDate) {
-        payload.start_date = `${startDate}T00:00:00`;
+        payload.start_date = new Date(`${startDate}T00:00:00`).toISOString();
       }
       if (endDate) {
-        payload.end_date = `${endDate}T23:59:59`;
+        payload.end_date = new Date(`${endDate}T23:59:59`).toISOString();
       }
       if (statusFilter && statusFilter !== "") {
         payload.status = statusFilter;
       }
-      
-      // Add search if present
-      if (debouncedSearchTerm && debouncedSearchTerm.trim()) {
-        payload.search = debouncedSearchTerm.trim();
-      }
 
       const { data } = await axios.post(
-        import.meta.env.VITE_API_BASE_URL + "/fund_request/get/requester",
+        `${import.meta.env.VITE_API_BASE_URL}/fund_request/get/requester`,
         payload,
         {
           headers: {
@@ -335,19 +327,20 @@ const GetFundRequests = () => {
       if (data.status === "success") {
         const raw: FundRequestRaw[] = data.data?.fund_requests || [];
 
-        // Client-side date filtering as additional safety
-        const filtered = raw.filter((req) => {
-          if (!startDate && !endDate) return true;
-          
-          const txDate = new Date(req.created_at);
-          const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
-          const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
-          
-          if (start && txDate < start) return false;
-          if (end && txDate > end) return false;
-          
-          return true;
-        });
+        // Client-side search filtering (since backend doesn't have search parameter)
+        let filtered = raw;
+        if (debouncedSearchTerm && debouncedSearchTerm.trim()) {
+          const searchLower = debouncedSearchTerm.toLowerCase().trim();
+          filtered = raw.filter((req) => 
+            (req.utr_number && req.utr_number.toLowerCase().includes(searchLower)) ||
+            (req.bank_name && req.bank_name.toLowerCase().includes(searchLower)) ||
+            req.remarks.toLowerCase().includes(searchLower) ||
+            (req.admin_remarks && req.admin_remarks.toLowerCase().includes(searchLower)) ||
+            req.request_status.toLowerCase().includes(searchLower) ||
+            req.amount.toString().includes(searchLower) ||
+            req.request_type.toLowerCase().includes(searchLower)
+          );
+        }
 
         const mapped: FundRequest[] = filtered.map((req) => ({
           id: req.fund_request_id,
@@ -357,6 +350,7 @@ const GetFundRequests = () => {
           bankName: req.bank_name,
           requestDate: req.request_date,
           utrNumber: req.utr_number,
+          requestType: req.request_type,
           status: req.request_status,
           remarks: req.remarks,
           adminRemarks: req.admin_remarks,
@@ -365,8 +359,13 @@ const GetFundRequests = () => {
           updatedAt: req.updated_at,
         }));
 
-        setFundRequests(mapped);
-        setTotalRecords(data.data?.total || mapped.length);
+        // Client-side pagination
+        const startIndex = (currentPage - 1) * entriesPerPage;
+        const endIndex = startIndex + entriesPerPage;
+        const paginatedData = mapped.slice(startIndex, endIndex);
+
+        setFundRequests(paginatedData);
+        setTotalRecords(mapped.length);
       } else {
         setFundRequests([]);
         setTotalRecords(0);
@@ -438,28 +437,23 @@ const GetFundRequests = () => {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
-      // Build payload for all data
+      // Build payload with same filters
       const payload: any = {
         id: userId,
-        limit: totalRecords,
-        offset: 0,
       };
 
       if (startDate) {
-        payload.start_date = `${startDate}T00:00:00`;
+        payload.start_date = new Date(`${startDate}T00:00:00`).toISOString();
       }
       if (endDate) {
-        payload.end_date = `${endDate}T23:59:59`;
+        payload.end_date = new Date(`${endDate}T23:59:59`).toISOString();
       }
       if (statusFilter && statusFilter !== "") {
         payload.status = statusFilter;
       }
-      if (debouncedSearchTerm && debouncedSearchTerm.trim()) {
-        payload.search = debouncedSearchTerm.trim();
-      }
 
       const { data } = await axios.post(
-        import.meta.env.VITE_API_BASE_URL + "/fund_request/get/requester",
+        `${import.meta.env.VITE_API_BASE_URL}/fund_request/get/requester`,
         payload,
         {
           headers: {
@@ -470,6 +464,20 @@ const GetFundRequests = () => {
       );
 
       let allData: FundRequestRaw[] = data.data?.fund_requests || [];
+
+      // Apply search filtering if present
+      if (debouncedSearchTerm && debouncedSearchTerm.trim()) {
+        const searchLower = debouncedSearchTerm.toLowerCase().trim();
+        allData = allData.filter((req) => 
+          (req.utr_number && req.utr_number.toLowerCase().includes(searchLower)) ||
+          (req.bank_name && req.bank_name.toLowerCase().includes(searchLower)) ||
+          req.remarks.toLowerCase().includes(searchLower) ||
+          (req.admin_remarks && req.admin_remarks.toLowerCase().includes(searchLower)) ||
+          req.request_status.toLowerCase().includes(searchLower) ||
+          req.amount.toString().includes(searchLower) ||
+          req.request_type.toLowerCase().includes(searchLower)
+        );
+      }
 
       if (allData.length === 0) {
         toast({
@@ -484,9 +492,10 @@ const GetFundRequests = () => {
         "S.No": index + 1,
         "Date & Time": formatDateTime(req.created_at),
         "Request Date": formatDate(req.request_date),
+        "Request Type": req.request_type || "-",
         "Amount (₹)": req.amount.toFixed(2),
-        "Bank Name": req.bank_name,
-        "UTR Number": req.utr_number,
+        "Bank Name": req.bank_name || "-",
+        "UTR Number": req.utr_number || "-",
         "User Remarks": req.remarks,
         "Admin Remarks": req.admin_remarks || "-",
         Status: req.request_status,
@@ -500,6 +509,7 @@ const GetFundRequests = () => {
         { wch: 8 },  // S.No
         { wch: 20 }, // Date & Time
         { wch: 15 }, // Request Date
+        { wch: 12 }, // Request Type
         { wch: 15 }, // Amount
         { wch: 20 }, // Bank Name
         { wch: 20 }, // UTR Number
@@ -587,6 +597,30 @@ const GetFundRequests = () => {
         return (
           <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-300">
             {status}
+          </span>
+        );
+    }
+  };
+
+  const getRequestTypeBadge = (type: string) => {
+    const typeUpper = type?.toUpperCase();
+    switch (typeUpper) {
+      case "NORMAL":
+        return (
+          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-300">
+            Normal
+          </span>
+        );
+      case "ADVANCE":
+        return (
+          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-300">
+            Advance
+          </span>
+        );
+      default:
+        return (
+          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-300">
+            {type || "-"}
           </span>
         );
     }
@@ -904,6 +938,9 @@ const GetFundRequests = () => {
                           Request Date
                         </TableHead>
                         <TableHead className="text-center text-xs font-semibold uppercase text-gray-700 whitespace-nowrap px-4">
+                          Request Type
+                        </TableHead>
+                        <TableHead className="text-center text-xs font-semibold uppercase text-gray-700 whitespace-nowrap px-4">
                           Amount (₹)
                         </TableHead>
                         <TableHead className="text-center text-xs font-semibold uppercase text-gray-700 whitespace-nowrap px-4">
@@ -940,6 +977,9 @@ const GetFundRequests = () => {
                           <TableCell className="py-3 px-4 text-center text-sm text-gray-900 whitespace-nowrap">
                             {formatDate(request.requestDate)}
                           </TableCell>
+                          <TableCell className="py-3 px-4 text-center whitespace-nowrap">
+                            {getRequestTypeBadge(request.requestType)}
+                          </TableCell>
                           <TableCell className="py-3 px-4 text-center font-semibold text-sm text-gray-900 whitespace-nowrap">
                             ₹{request.amount.toLocaleString("en-IN", {
                               minimumFractionDigits: 2,
@@ -947,10 +987,10 @@ const GetFundRequests = () => {
                             })}
                           </TableCell>
                           <TableCell className="py-3 px-4 text-center text-sm text-gray-900 whitespace-nowrap">
-                            {request.bankName}
+                            {request.bankName || "-"}
                           </TableCell>
                           <TableCell className="py-3 px-4 text-center font-mono text-sm text-gray-900 whitespace-nowrap">
-                            {request.utrNumber}
+                            {request.utrNumber || "-"}
                           </TableCell>
                           <TableCell className="py-3 px-4 text-center text-sm text-gray-600">
                             <div
