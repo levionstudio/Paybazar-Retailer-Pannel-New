@@ -6,7 +6,6 @@ import { jwtDecode } from "jwt-decode";
 import { Header } from "@/components/layout/Header";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { ServiceCard } from "@/components/dashboard/ServiceCard";
-import { TransactionsTable } from "@/components/dashboard/TransactionTable";
 import { useToast } from "@/hooks/use-toast";
 
 import {
