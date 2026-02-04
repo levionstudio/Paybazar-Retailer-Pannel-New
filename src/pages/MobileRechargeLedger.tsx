@@ -225,6 +225,7 @@ export default function MobileRechargeLedger({ userId }: MobileRechargeLedgerPro
       );
 
       if (response.data?.status === "success" && Array.isArray(response.data.data?.recharges)) {
+        console.log("Response data:", response.data);
         const raw: MobileRechargeTransaction[] = response.data.data.recharges || [];
         
         // Client-side date filtering as additional safety

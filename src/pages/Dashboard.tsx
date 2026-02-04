@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import { jwtDecode } from "jwt-decode";
+
 import { Header } from "@/components/layout/Header";
+import { AppSidebar } from "@/components/layout/AppSidebar";
 import { ServiceCard } from "@/components/dashboard/ServiceCard";
-import { StatsCard } from "@/components/dashboard/StatsCard";
+import { TransactionsTable } from "@/components/dashboard/TransactionTable";
+import { useToast } from "@/hooks/use-toast";
+
 import {
   ArrowLeftRight,
   Smartphone,
@@ -13,11 +18,19 @@ import {
   Building2,
   Loader2,
 } from "lucide-react";
-import { TransactionsTable } from "@/components/dashboard/TransactionTable";
-import { AppSidebar } from "@/components/layout/AppSidebar";
-import { useToast } from "@/hooks/use-toast";
 
-/* -------------------- TOKEN INTERFACE -------------------- */
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+import { Badge } from "@/components/ui/badge";
+
+/* -------------------- INTERFACES -------------------- */
 interface DecodedToken {
   user_id: string;
   user_name: string;
@@ -26,12 +39,82 @@ interface DecodedToken {
   iat: number;
 }
 
-/* -------------------- USER INFO -------------------- */
 interface UserInfo {
   id: string;
   name: string;
   role: string;
 }
+
+interface MobileRechargeTransaction {
+  mobile_recharge_transaction_id: string;
+  retailer_id: string;
+  mobile_number: string;
+  operator_code: string;
+  operator_name: string;
+  amount: number;
+  before_balance: number;
+  after_balance: number;
+  commision: number;
+  status: string;
+  partner_request_id: string;
+  created_at: string;
+}
+
+interface DTHTransaction {
+  dth_transaction_id: number;
+  retailer_id: string;
+  customer_id: string;
+  operator_code: number;
+  operator_name: string;
+  amount: number;
+  before_balance: number;
+  after_balance: number;
+  commision: number;
+  status: string;
+  partner_request_id: string;
+  created_at: string;
+}
+
+interface PayoutTransaction {
+  payout_transaction_id: string;
+  operator_transaction_id: string | null;
+  partner_request_id: string;
+  order_id: string | null;
+  retailer_id: string;
+  retailer_name: string;
+  retailer_business_name: string;
+  mobile_number: string;
+  bank_name: string;
+  beneficiary_name: string;
+  account_number: string;
+  ifsc_code: string;
+  amount: number;
+  transfer_type: string;
+  transaction_status: string;
+  retailer_commision: number;
+  before_balance: number;
+  after_balance: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RecentTransactions {
+  mobile: MobileRechargeTransaction | null;
+  dth: DTHTransaction | null;
+  payout: PayoutTransaction | null;
+}
+
+/* -------------------- DATE UTILITY (UTC SAFE) -------------------- */
+const isToday = (dateString: string) => {
+  const txDate = new Date(dateString); // UTC → local
+  const today = new Date();
+
+  return (
+    txDate.getDate() === today.getDate() &&
+    txDate.getMonth() === today.getMonth() &&
+    txDate.getFullYear() === today.getFullYear()
+  );
+};
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -40,70 +123,166 @@ export default function Dashboard() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [todayRechargeTotal, setTodayRechargeTotal] = useState(0);
+  const [todayPayoutTotal, setTodayPayoutTotal] = useState(0);
+  
+  const [recentTransactions, setRecentTransactions] = useState<RecentTransactions>({
+    mobile: null,
+    dth: null,
+    payout: null,
+  });
+
   /* -------------------- TOKEN VALIDATION -------------------- */
   useEffect(() => {
-    const validateToken = () => {
-      const token = localStorage.getItem("authToken");
+    const token = localStorage.getItem("authToken");
 
-      if (!token) {
-        toast({
-          title: "Session expired",
-          description: "Please login again.",
-          variant: "destructive",
-        });
+    if (!token) {
+      toast({
+        title: "Session expired",
+        description: "Please login again.",
+        variant: "destructive",
+      });
+      navigate("/login");
+      return;
+    }
+
+    try {
+      const decoded = jwtDecode<DecodedToken>(token);
+
+      if (decoded.exp * 1000 < Date.now()) {
+        localStorage.removeItem("authToken");
         navigate("/login");
         return;
       }
 
-      try {
-        const decoded = jwtDecode<DecodedToken>(token);
-
-        // Check if token is expired
-        if (decoded.exp * 1000 < Date.now()) {
-          localStorage.removeItem("authToken");
-          toast({
-            title: "Session expired",
-            description: "Your session has expired. Please login again.",
-            variant: "destructive",
-          });
-          navigate("/login");
-          return;
-        }
-
-        // Check if user role is retailer
-        if (decoded.user_role !== "retailer") {
-          localStorage.removeItem("authToken");
-          toast({
-            title: "Access Denied",
-            description: "You don't have permission to access this page.",
-            variant: "destructive",
-          });
-          navigate("/login");
-          return;
-        }
-
-        // Set user info
-        setUserInfo({
-          id: decoded.user_id,
-          name: decoded.user_name,
-          role: decoded.user_role,
-        });
-
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Token decode error:", error);
+      if (decoded.user_role !== "retailer") {
         localStorage.removeItem("authToken");
-        toast({
-          title: "Invalid session",
-          description: "Please login again.",
-          variant: "destructive",
-        });
         navigate("/login");
+        return;
+      }
+
+      setUserInfo({
+        id: decoded.user_id,
+        name: decoded.user_name,
+        role: decoded.user_role,
+      });
+    } catch {
+      localStorage.removeItem("authToken");
+      navigate("/login");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [navigate, toast]);
+
+  /* -------------------- FETCH TODAY TOTALS & RECENT TRANSACTIONS -------------------- */
+  useEffect(() => {
+    if (!userInfo?.id) return;
+
+    const token = localStorage.getItem("authToken");
+    if (!token) return;
+
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const fetchTotals = async () => {
+      try {
+        /* ---------- MOBILE ---------- */
+        const mobileRes = await axios.get(
+          `${import.meta.env.VITE_API_BASE_URL}/mobile_recharge/get/${userInfo.id}`,
+          { headers, params: { limit: 1000, offset: 0 } }
+        );
+
+        const mobileTransactions = mobileRes.data?.data?.recharges || [];
+        const todayMobileTransactions = mobileTransactions.filter(
+          (tx: MobileRechargeTransaction) => isToday(tx.created_at)
+        );
+
+        const mobileTotal = todayMobileTransactions.reduce(
+          (sum: number, tx: MobileRechargeTransaction) => sum + tx.amount,
+          0
+        );
+
+        // Get most recent mobile transaction from today
+        const recentMobile = todayMobileTransactions.length > 0
+          ? todayMobileTransactions[0]
+          : null;
+
+        /* ---------- DTH ---------- */
+        const dthRes = await axios.get(
+          `${import.meta.env.VITE_API_BASE_URL}/dth_recharge/get/${userInfo.id}`,
+          { headers, params: { limit: 1000, offset: 0 } }
+        );
+
+        const dthTransactions = dthRes.data?.data?.recharges || [];
+        const todayDTHTransactions = dthTransactions.filter(
+          (tx: DTHTransaction) => isToday(tx.created_at)
+        );
+
+        const dthTotal = todayDTHTransactions.reduce(
+          (sum: number, tx: DTHTransaction) => sum + tx.amount,
+          0
+        );
+
+        // Get most recent DTH transaction from today
+        const recentDTH = todayDTHTransactions.length > 0
+          ? todayDTHTransactions[0]
+          : null;
+
+        setTodayRechargeTotal(mobileTotal + dthTotal);
+
+        /* ---------- PAYOUT (MONEY TRANSFER) ---------- */
+        const payoutRes = await axios.get(
+          `${import.meta.env.VITE_API_BASE_URL}/payout/get/${userInfo.id}`,
+          { headers, params: { limit: 1000, offset: 0 } }
+        );
+
+        const payoutTransactions = payoutRes.data?.data?.transactions || [];
+        const todayPayoutTransactions = payoutTransactions.filter(
+          (tx: PayoutTransaction) =>
+            isToday(tx.created_at) &&
+            ["SUCCESS", "COMPLETED"].includes(tx.transaction_status)
+        );
+
+        const payoutTotal = todayPayoutTransactions.reduce(
+          (sum: number, tx: PayoutTransaction) => sum + tx.amount,
+          0
+        );
+
+        // Get most recent payout transaction from today
+        const recentPayout = todayPayoutTransactions.length > 0
+          ? todayPayoutTransactions[0]
+          : null;
+
+        setTodayPayoutTotal(payoutTotal);
+
+        // Set all recent transactions
+        setRecentTransactions({
+          mobile: recentMobile,
+          dth: recentDTH,
+          payout: recentPayout,
+        });
+      } catch (error) {
+        console.error("Dashboard totals fetch failed", error);
+        setTodayRechargeTotal(0);
+        setTodayPayoutTotal(0);
+        setRecentTransactions({
+          mobile: null,
+          dth: null,
+          payout: null,
+        });
       }
     };
 
-    validateToken();
-  }, [navigate, toast]);
+    fetchTotals();
+  }, [userInfo?.id]);
+
+  /* -------------------- LOADING -------------------- */
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   /* -------------------- SERVICES -------------------- */
   const services = [
@@ -112,14 +291,14 @@ export default function Dashboard() {
       icon: ArrowLeftRight,
       status: "active" as const,
       description: "Send money instantly to any bank account",
-      stats: [{ label: "Today", value: "₹0.00" }],
+      stats: [{ label: "Today", value: `₹${todayPayoutTotal.toFixed(2)}` }],
     },
     {
       title: "Mobile Recharge",
       icon: Smartphone,
       status: "active" as const,
-      description: "Recharge prepaid mobiles and DTH connections",
-      stats: [{ label: "Today", value: "₹0.00" }],
+      description: "Mobile & DTH recharges",
+      stats: [{ label: "Today", value: `₹${todayRechargeTotal.toFixed(2)}` }],
     },
     {
       title: "AePS",
@@ -132,38 +311,67 @@ export default function Dashboard() {
       title: "BBPS",
       icon: Wallet,
       status: "active" as const,
-      description: "Pay electricity, water, gas and other bills",
+      description: "Utility bill payments",
       stats: [{ label: "Today", value: "₹0.00" }],
     },
     {
       title: "Ticket Booking",
       icon: Building2,
       status: "active" as const,
-      description: "Book flight and bus tickets",
+      description: "Flight and bus booking",
       stats: [{ label: "Today", value: "₹0.00" }],
     },
     {
       title: "UPI",
       icon: Landmark,
       status: "active" as const,
-      description: "Universal Payment Interface",
+      description: "UPI payments",
       stats: [{ label: "Today", value: "₹0.00" }],
     },
   ];
 
-  /* -------------------- LOADING STATE -------------------- */
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Loading dashboard...</p>
-        </div>
-      </div>
-    );
+  /* -------------------- BUILD TABLE ROWS -------------------- */
+  const recentTransactionRows = [];
+  
+  if (recentTransactions.mobile) {
+    recentTransactionRows.push({
+      type: "Mobile Recharge",
+      amount: recentTransactions.mobile.amount,
+      details: recentTransactions.mobile.mobile_number || "-",
+      operator: recentTransactions.mobile.operator_name || "-",
+      transactionId: recentTransactions.mobile.mobile_recharge_transaction_id || "-",
+      status: recentTransactions.mobile.status || "SUCCESS",
+      time: new Date(recentTransactions.mobile.created_at).toLocaleString(),
+    });
   }
 
-  /* -------------------- MAIN UI -------------------- */
+  if (recentTransactions.dth) {
+    recentTransactionRows.push({
+      type: "DTH Recharge",
+      amount: recentTransactions.dth.amount,
+      details: recentTransactions.dth.customer_id || "-",
+      operator: recentTransactions.dth.operator_name || "-",
+      transactionId: String(recentTransactions.dth.dth_transaction_id) || "-",
+      status: recentTransactions.dth.status || "SUCCESS",
+      time: new Date(recentTransactions.dth.created_at).toLocaleString(),
+    });
+  }
+
+  if (recentTransactions.payout) {
+    recentTransactionRows.push({
+      type: "Money Transfer",
+      amount: recentTransactions.payout.amount,
+      details: recentTransactions.payout.beneficiary_name || "-",
+      operator: recentTransactions.payout.account_number 
+        ? `****${recentTransactions.payout.account_number.slice(-4)}`
+        : "-",
+      transactionId: recentTransactions.payout.payout_transaction_id || "-",
+      status: recentTransactions.payout.transaction_status,
+      time: new Date(recentTransactions.payout.created_at).toLocaleString(),
+    });
+  }
+
+  /* -------------------- UI -------------------- */
   return (
     <div className="min-h-screen flex w-full bg-background">
       <AppSidebar />
@@ -172,35 +380,81 @@ export default function Dashboard() {
         <Header userInfo={userInfo} />
 
         <main className="flex-1 p-6 space-y-6 overflow-auto">
-          {/* Welcome */}
           <div className="paybazaar-gradient rounded-lg p-6 text-white">
-            <h1 className="text-2xl font-bold mb-2">
-              Welcome back, {userInfo?.name || "User"}!
+            <h1 className="text-2xl font-bold">
+              Welcome back, {userInfo?.name}!
             </h1>
             <p className="text-white/90">
-              Here's your business overview for today. You've processed ₹0 in
-              transactions.
+              Today's Total Business: ₹
+              {(todayRechargeTotal + todayPayoutTotal).toFixed(2)}
             </p>
-          
           </div>
 
-          {/* Services */}
           <div>
             <h2 className="text-xl font-semibold mb-4">Your Services</h2>
-
-            {/* Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-fr">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {services.map((service, index) => (
                 <ServiceCard
                   key={index}
                   {...service}
-                  onManage={() => console.log(`Managing ${service.title}`)}
+                  onManage={() => console.log(service.title)}
                 />
               ))}
             </div>
           </div>
 
-          <TransactionsTable userId={userInfo?.id} />
+          {/* Recent Transactions Table */}
+          {recentTransactionRows.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Recent Transactions (Today)</h2>
+              <div className="border rounded-lg">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Details</TableHead>
+                      <TableHead>Operator/Account</TableHead>
+                      <TableHead>Transaction ID</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Time</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentTransactionRows.map((row, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{row.type}</TableCell>
+                        <TableCell>₹{row.amount.toFixed(2)}</TableCell>
+                        <TableCell>{row.details}</TableCell>
+                        <TableCell>{row.operator}</TableCell>
+                        <TableCell className="font-mono text-xs">{row.transactionId}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              row.status === "SUCCESS" || row.status === "COMPLETED"
+                                ? "default"
+                                : "secondary"
+                            }
+                            className={
+                              row.status === "SUCCESS" || row.status === "COMPLETED"
+                                ? "bg-green-500 hover:bg-green-600"
+                                : ""
+                            }
+                          >
+                            {row.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {row.time}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
         </main>
       </div>
     </div>
