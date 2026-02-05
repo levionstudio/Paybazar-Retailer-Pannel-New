@@ -82,6 +82,16 @@ interface FundRequest {
 }
 
 /* -------------------- COMPONENT -------------------- */
+const getRequestTypeLabel = (type: string) => {
+  switch (type?.toUpperCase()) {
+    case "NORMAL":
+      return "Bank Transfer";
+    case "ADVANCE":
+      return "Advance Credit";
+    default:
+      return type || "-";
+  }
+};
 
 const GetFundRequests = () => {
   const { toast } = useToast();
@@ -602,29 +612,33 @@ const GetFundRequests = () => {
     }
   };
 
-  const getRequestTypeBadge = (type: string) => {
-    const typeUpper = type?.toUpperCase();
-    switch (typeUpper) {
-      case "NORMAL":
-        return (
-          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-300">
-            Normal
-          </span>
-        );
-      case "ADVANCE":
-        return (
-          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-300">
-            Advance
-          </span>
-        );
-      default:
-        return (
-          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-300">
-            {type || "-"}
-          </span>
-        );
-    }
-  };
+const getRequestTypeBadge = (type: string) => {
+  const label = getRequestTypeLabel(type);
+
+  switch (type?.toUpperCase()) {
+    case "NORMAL":
+      return (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-300">
+          {label}
+        </span>
+      );
+
+    case "ADVANCE":
+      return (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-300">
+          {label}
+        </span>
+      );
+
+    default:
+      return (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-300">
+          {label}
+        </span>
+      );
+  }
+};
+
 
   /* -------------------- PAGINATION -------------------- */
 

@@ -149,19 +149,19 @@ const ContactUs = () => {
     {
       icon: Phone,
       title: "Phone Number",
-      value: "+91 9319187762",
+      value: "+91 9311367701",
       color: "bg-blue-50 text-blue-600",
     },
     {
       icon: Headphones,
-      title: "Onboarding Number",
-      value: "+91 9289174141",
+      title: "Helpline Number",
+      value: "0124-28089495",
       color: "bg-purple-50 text-purple-600",
     },
     {
       icon: Mail,
       title: "Email Address",
-      value: "info@paybazaar.in",
+      value: "helpdeskpaybazaar@gmail.com",
       color: "bg-green-50 text-green-600",
     },
     {
@@ -357,14 +357,7 @@ const ContactUs = () => {
                         </p>
                       </div>
 
-                      {/* User Info Display */}
-                      {userId && (
-                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                          <p className="text-xs text-blue-800">
-                            <strong>Your User ID:</strong> {userId}
-                          </p>
-                        </div>
-                      )}
+               
 
                       {/* Submit Button */}
                       <Button
@@ -427,7 +420,7 @@ const ContactUs = () => {
                       <Button
                         variant="outline"
                         className="gap-2"
-                        onClick={() => window.open("tel:+919319187762")}
+                        onClick={() => window.open("tel:+919311367701")}
                       >
                         <Phone className="h-4 w-4" />
                         Call Support
@@ -436,7 +429,7 @@ const ContactUs = () => {
                         variant="outline"
                         className="gap-2"
                         onClick={() =>
-                          window.open("mailto:info@paybazaar.in")
+                          window.open("mailto:helpdeskpaybazaar@gmail.com")
                         }
                       >
                         <Mail className="h-4 w-4" />
