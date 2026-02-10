@@ -252,41 +252,57 @@ export default function PostpaidMobileRechargeReport() {
     }
   };
 
-  // Build query params helper
-  const buildQueryParams = (params: {
-    limit?: number;
-    offset?: number;
-    start_date?: string;
-    end_date?: string;
-    status?: string;
-    search?: string;
-  }) => {
-    const queryParams = new URLSearchParams();
+const buildQueryParams = (params: {
+  limit?: number;
+  offset?: number;
+  start_date?: string;
+  end_date?: string;
+}) => {
+  const queryParams = new URLSearchParams();
 
-    if (params.limit !== undefined) {
-      queryParams.append("limit", params.limit.toString());
-    }
-    if (params.offset !== undefined) {
-      queryParams.append("offset", params.offset.toString());
-    }
-    
-    if (params.start_date && params.start_date.trim()) {
-      queryParams.append("start_date", `${params.start_date.trim()}T00:00:00`);
-    }
-    if (params.end_date && params.end_date.trim()) {
-      queryParams.append("end_date", `${params.end_date.trim()}T23:59:59`);
-    }
-    
-    if (params.status && params.status !== "ALL") {
-      queryParams.append("status", params.status);
-    }
-    
-    if (params.search && params.search.trim()) {
-      queryParams.append("search", params.search.trim());
-    }
+  if (params.limit !== undefined)
+    queryParams.append("limit", params.limit.toString());
 
-    return queryParams.toString();
-  };
+  if (params.offset !== undefined)
+    queryParams.append("offset", params.offset.toString());
+
+  if (params.start_date)
+    queryParams.append("start_date", `${params.start_date}T00:00:00`);
+
+  if (params.end_date)
+    queryParams.append("end_date", `${params.end_date}T23:59:59`);
+
+  return queryParams.toString();
+};
+const applyFrontendFilters = (
+  data: PostpaidRechargeTransaction[]
+) => {
+  let filtered = [...data];
+
+  // STATUS FILTER
+  if (statusFilter !== "ALL") {
+    filtered = filtered.filter(
+      (tx) => tx.recharge_status.toUpperCase() === statusFilter
+    );
+  }
+
+  // SEARCH FILTER
+  if (searchTerm.trim()) {
+    const search = searchTerm.toLowerCase();
+
+    filtered = filtered.filter((tx) =>
+      tx.mobile_number.toLowerCase().includes(search) ||
+      tx.operator_name.toLowerCase().includes(search) ||
+      tx.circle_name.toLowerCase().includes(search) ||
+      tx.order_id.toLowerCase().includes(search) ||
+      tx.partner_request_id.toLowerCase().includes(search) ||
+      String(tx.postpaid_recharge_transaction_id).includes(search)
+    );
+  }
+
+  return filtered;
+};
+
 
   // Fetch transactions with query params
   const fetchTransactions = async () => {
@@ -309,8 +325,6 @@ export default function PostpaidMobileRechargeReport() {
         offset: offset,
         start_date: startDate,
         end_date: endDate,
-        status: statusFilter,
-        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
@@ -332,6 +346,27 @@ export default function PostpaidMobileRechargeReport() {
         Array.isArray(response.data.data?.history)
       ) {
         const raw: PostpaidRechargeTransaction[] = response.data.data.history || [];
+        const normalized = raw.map((tx) => ({
+  ...tx,
+
+  // strings
+  mobile_number: String(tx.mobile_number ?? ""),
+  operator_name: String(tx.operator_name ?? ""),
+  circle_name: String(tx.circle_name ?? ""),
+  partner_request_id: String(tx.partner_request_id ?? ""),
+  order_id: String(tx.order_id ?? ""),
+  recharge_status: String(tx.recharge_status ?? ""),
+
+  // numbers
+  amount: Number(tx.amount ?? 0),
+  before_balance: Number(tx.before_balance ?? 0),
+  after_balance: Number(tx.after_balance ?? 0),
+  commission: Number(tx.commission ?? 0),
+
+  // date
+  created_at: tx.created_at ?? "",
+}));
+
         
         // Client-side date filtering as additional safety
         const filtered = raw.filter((tx) => {
@@ -352,8 +387,17 @@ export default function PostpaidMobileRechargeReport() {
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
-        setTransactions(sortedTransactions);
-        setTotalRecords(response.data.data?.total || sortedTransactions.length);
+  const frontendFiltered = applyFrontendFilters(normalized);
+
+setTotalRecords(frontendFiltered.length);
+
+const paginated = frontendFiltered.slice(
+  (currentPage - 1) * entriesPerPage,
+  currentPage * entriesPerPage
+);
+
+setTransactions(paginated);
+
         console.log("✅ Loaded", sortedTransactions.length, "postpaid transactions");
       } else {
         setTransactions([]);
@@ -380,12 +424,15 @@ export default function PostpaidMobileRechargeReport() {
   };
 
   // Fetch transactions when filters or pagination changes
-  useEffect(() => {
-    if (retailerId && validateDates()) {
-      fetchTransactions();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [retailerId, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
+useEffect(() => {
+  if (retailerId && validateDates()) {
+    fetchTransactions();
+  }
+}, [retailerId, startDate, endDate]);
+useEffect(() => {
+  setCurrentPage(1);
+}, [searchTerm, statusFilter]);
+
 
   // Clear filters
   const clearFilters = () => {
@@ -405,10 +452,41 @@ export default function PostpaidMobileRechargeReport() {
     searchTerm;
 
   // Export to Excel - fetch all data
-  const exportToExcel = async () => {
-    if (!retailerId) return;
+const exportToExcel = async () => {
+  if (!retailerId) return;
+  if (!validateDates()) return;
 
-    if (totalRecords === 0) {
+  setIsExporting(true);
+
+  try {
+    toast({
+      title: "Exporting",
+      description: "Preparing Excel file...",
+    });
+
+    const token = localStorage.getItem("authToken");
+
+    // 🔹 Backend ONLY for date range (NO status, NO search)
+    const queryString = buildQueryParams({
+      limit: totalRecords,
+      offset: 0,
+      start_date: startDate,
+      end_date: endDate,
+    });
+
+    const response = await axios.get(
+      `${import.meta.env.VITE_API_BASE_URL}/bbps/recharge/get/${retailerId}?${queryString}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    let rawData: PostpaidRechargeTransaction[] =
+      response.data?.data?.history || [];
+
+    if (rawData.length === 0) {
       toast({
         title: "No Data",
         description: "No transactions to export",
@@ -417,102 +495,114 @@ export default function PostpaidMobileRechargeReport() {
       return;
     }
 
-    if (!validateDates()) return;
+    /* ---------------- NORMALIZE DATA (VERY IMPORTANT) ---------------- */
+    const normalizedData: PostpaidRechargeTransaction[] = rawData.map((tx) => ({
+      ...tx,
+      mobile_number: String(tx.mobile_number ?? ""),
+      operator_name: String(tx.operator_name ?? ""),
+      circle_name: String(tx.circle_name ?? ""),
+      recharge_status: String(tx.recharge_status ?? ""),
+      order_id: String(tx.order_id ?? ""),
+      amount: Number(tx.amount ?? 0),
+      before_balance: Number(tx.before_balance ?? 0),
+      after_balance: Number(tx.after_balance ?? 0),
+      created_at: tx.created_at ?? "",
+    }));
 
-    setIsExporting(true);
+    /* ---------------- FRONTEND FILTERS (SEARCH + STATUS) ---------------- */
+    let filteredData = [...normalizedData];
 
-    try {
-      toast({
-        title: "Exporting",
-        description: "Fetching all data for export...",
-      });
-
-      const token = localStorage.getItem("authToken");
-      const queryString = buildQueryParams({
-        limit: totalRecords,
-        offset: 0,
-        start_date: startDate,
-        end_date: endDate,
-        status: statusFilter,
-        search: debouncedSearchTerm,
-      });
-
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/bbps/recharge/get/${retailerId}?${queryString}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+    // STATUS filter
+    if (statusFilter !== "ALL") {
+      filteredData = filteredData.filter(
+        (tx) =>
+          tx.recharge_status.toUpperCase() === statusFilter.toUpperCase()
       );
+    }
 
-      let allData: PostpaidRechargeTransaction[] =
-        response.data?.data?.history || [];
+    // SEARCH filter
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      filteredData = filteredData.filter((tx) =>
+        tx.mobile_number.includes(search) ||
+        tx.operator_name.toLowerCase().includes(search) ||
+        tx.circle_name.toLowerCase().includes(search) ||
+        tx.order_id.toLowerCase().includes(search)
+      );
+    }
 
-      if (allData.length === 0) {
-        toast({
-          title: "No Data",
-          description: "No transactions to export",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const exportData = allData.map((tx, index) => ({
-        "S.No": index + 1,
-        "Transaction ID": tx.postpaid_recharge_transaction_id,
-        "Date & Time": formatDate(tx.created_at),
-        "Mobile Number": tx.mobile_number,
-        "Operator": tx.operator_name,
-        "Circle": tx.circle_name,
-        "Amount (₹)": tx.amount.toFixed(2),
-        "Before Balance (₹)": tx.before_balance.toFixed(2),
-        "After Balance (₹)": tx.after_balance.toFixed(2),
-        // "Commission (₹)": tx.commission.toFixed(2),
-        "Order ID": tx.order_id,
-        "Status": tx.recharge_status,
-      }));
-
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Postpaid Report");
-
-      const colWidths = [
-        { wch: 8 },  // S.No
-        { wch: 15 }, // Transaction ID
-        { wch: 20 }, // Date & Time
-        { wch: 15 }, // Mobile Number
-        { wch: 20 }, // Operator
-        { wch: 20 }, // Circle
-        { wch: 12 }, // Amount
-        { wch: 15 }, // Before Balance
-        { wch: 15 }, // After Balance
-        // { wch: 12 }, // Commission
-        { wch: 30 }, // Order ID
-        { wch: 12 }, // Status
-      ];
-      worksheet["!cols"] = colWidths;
-
-      const fileName = `Postpaid_Recharge_Report_${
-        new Date().toISOString().split("T")[0]
-      }.xlsx`;
-      XLSX.writeFile(workbook, fileName);
-
+    if (filteredData.length === 0) {
       toast({
-        title: "Success",
-        description: `Exported ${allData.length} transactions to Excel`,
-      });
-    } catch (error) {
-      console.error("Export error:", error);
-      toast({
-        title: "Export Failed",
-        description: "Unable to export transactions",
+        title: "No Data",
+        description: "No matching transactions to export",
         variant: "destructive",
       });
-    } finally {
-      setIsExporting(false);
+      return;
     }
-  };
+
+    /* ---------------- SORT (LATEST FIRST – MATCH TABLE) ---------------- */
+    filteredData.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() -
+        new Date(a.created_at).getTime()
+    );
+
+    /* ---------------- EXCEL DATA ---------------- */
+    const exportData = filteredData.map((tx, index) => ({
+      "S.No": index + 1,
+      "Transaction ID": tx.postpaid_recharge_transaction_id,
+      "Date & Time": formatDate(tx.created_at),
+      "Mobile Number": tx.mobile_number,
+      Operator: tx.operator_name,
+      Circle: tx.circle_name,
+      "Amount (₹)": tx.amount.toFixed(2),
+      "Before Balance (₹)": tx.before_balance.toFixed(2),
+      "After Balance (₹)": tx.after_balance.toFixed(2),
+      "Order ID": tx.order_id,
+      Status: tx.recharge_status,
+    }));
+
+    /* ---------------- CREATE EXCEL ---------------- */
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Postpaid Report");
+
+    worksheet["!cols"] = [
+      { wch: 8 },   // S.No
+      { wch: 18 },  // Transaction ID
+      { wch: 22 },  // Date & Time
+      { wch: 15 },  // Mobile Number
+      { wch: 20 },  // Operator
+      { wch: 18 },  // Circle
+      { wch: 14 },  // Amount
+      { wch: 18 },  // Before Balance
+      { wch: 18 },  // After Balance
+      { wch: 30 },  // Order ID
+      { wch: 14 },  // Status
+    ];
+
+    const fileName = `Postpaid_Recharge_Report_${new Date()
+      .toISOString()
+      .split("T")[0]}.xlsx`;
+
+    XLSX.writeFile(workbook, fileName);
+
+    toast({
+      title: "Success",
+      description: `Exported ${filteredData.length} transactions to Excel`,
+    });
+  } catch (error) {
+    console.error("Export error:", error);
+    toast({
+      title: "Export Failed",
+      description: "Unable to export transactions",
+      variant: "destructive",
+    });
+  } finally {
+    setIsExporting(false);
+  }
+};
+
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "-";
@@ -531,13 +621,22 @@ export default function PostpaidMobileRechargeReport() {
     }
   };
 
-  const formatAmount = (amount: number | string) => {
-    const num = typeof amount === "string" ? parseFloat(amount) : amount;
-    return num.toLocaleString("en-IN", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
+const formatAmount = (amount: number | string | null | undefined) => {
+  const num =
+    typeof amount === "number"
+      ? amount
+      : typeof amount === "string"
+      ? parseFloat(amount)
+      : 0;
+
+  if (isNaN(num)) return "0.00";
+
+  return num.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
 
   const getStatusColor = (status: string) => {
     switch (status.toUpperCase()) {

@@ -31,6 +31,7 @@ import {
   Loader2,
   X,
   AlertCircle,
+  Filter,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
@@ -88,12 +89,13 @@ const UserWalletTransactions = () => {
   };
 
   const [userId, setUserId] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<WalletTransaction[]>([]); // All fetched data
+  const [filteredTransactions, setFilteredTransactions] = useState<WalletTransaction[]>([]); // After filters
   const [loading, setLoading] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
 
   // Filters - Set today's date as default
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "CREDIT" | "DEBIT">("ALL");
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
   const [dateError, setDateError] = useState<string>("");
@@ -268,9 +270,48 @@ const UserWalletTransactions = () => {
     }
   };
 
-  /* -------------------- FETCH TRANSACTIONS WITH LIMIT/OFFSET -------------------- */
+  /* -------------------- CLIENT-SIDE FILTERING -------------------- */
 
-  const fetchTransactions = async (resetPage = false) => {
+  const applyFilters = (transactions: WalletTransaction[]) => {
+    let filtered = [...transactions];
+
+    // 1. Date filtering
+    if (startDate || endDate) {
+      filtered = filtered.filter((tx) => {
+        const txDate = new Date(tx.createdAt);
+        const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+        const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+        
+        if (start && txDate < start) return false;
+        if (end && txDate > end) return false;
+        
+        return true;
+      });
+    }
+
+    // 2. Status filtering
+    if (statusFilter !== "ALL") {
+      filtered = filtered.filter((tx) => tx.type === statusFilter);
+    }
+
+    // 3. Search filtering (search in ID, reason, and remarks)
+    if (searchTerm.trim()) {
+      const search = searchTerm.trim().toLowerCase();
+      filtered = filtered.filter((tx) => {
+        return (
+          tx.id.toLowerCase().includes(search) ||
+          tx.reason.toLowerCase().includes(search) ||
+          tx.remarks.toLowerCase().includes(search)
+        );
+      });
+    }
+
+    return filtered;
+  };
+
+  /* -------------------- FETCH TRANSACTIONS (WITHOUT SEARCH PARAM) -------------------- */
+
+  const fetchTransactions = async () => {
     if (!userId) return;
 
     if (!validateDates()) return;
@@ -278,50 +319,19 @@ const UserWalletTransactions = () => {
     const token = localStorage.getItem("authToken");
     setLoading(true);
 
-    const page = resetPage ? 1 : currentPage;
-    const limit = entriesPerPage;
-    const offset = (page - 1) * limit;
-
-    // Validate limit and offset
-    if (limit < 1 || limit > 100) {
-      toast({
-        title: "Invalid Limit",
-        description: "Entries per page must be between 1 and 100.",
-        variant: "destructive",
-      });
-      setLoading(false);
-      return;
-    }
-
-    if (offset < 0) {
-      toast({
-        title: "Invalid Page",
-        description: "Page number is invalid.",
-        variant: "destructive",
-      });
-      setLoading(false);
-      return;
-    }
-
     try {
-      // Build query params
+      // Build query params - remove search, we'll filter client-side
       const params = new URLSearchParams({
-        limit: limit.toString(),
-        offset: offset.toString(),
+        limit: "10000", // Fetch large number to get all data
+        offset: "0",
       });
-
-      if (searchTerm.trim()) {
-        params.append("search", searchTerm.trim());
-      }
 
       // Always send date filters (required for proper filtering)
       if (startDate) {
-        // Send start of day for start_date
         params.append("start_date", `${startDate}T00:00:00`);
       }
 
       if (endDate) {
-        // Send end of day for end_date
         params.append("end_date", `${endDate}T23:59:59`);
       }
 
@@ -336,46 +346,25 @@ const UserWalletTransactions = () => {
 
       if (res.data.status === "success") {
         const raw: WalletTransactionRaw[] = res.data?.data?.transactions || [];
-        const total = res.data?.data?.total || raw.length;
 
-        const mapped: WalletTransaction[] = raw
-          .map((tx) => {
-            const isCredit = !!tx.credit_amount;
+        const mapped: WalletTransaction[] = raw.map((tx) => {
+          const isCredit = !!tx.credit_amount;
 
-            return {
-              id: tx.wallet_transaction_id,
-              type: isCredit ? "CREDIT" : "DEBIT",
-              amount: parseFloat(tx.credit_amount || tx.debit_amount || "0"),
-              reason: tx.transaction_reason,
-              remarks: tx.remarks,
-              beforeBalance: parseFloat(tx.before_balance),
-              afterBalance: parseFloat(tx.after_balance),
-              createdAt: tx.created_at,
-            };
-          })
-          .filter((tx) => {
-            // Client-side date filtering as additional safety
-            if (!startDate && !endDate) return true;
-            
-            const txDate = new Date(tx.createdAt);
-            const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
-            const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
-            
-            if (start && txDate < start) return false;
-            if (end && txDate > end) return false;
-            
-            return true;
-          });
+          return {
+            id: tx.wallet_transaction_id,
+            type: isCredit ? "CREDIT" : "DEBIT",
+            amount: parseFloat(tx.credit_amount || tx.debit_amount || "0"),
+            reason: tx.transaction_reason,
+            remarks: tx.remarks,
+            beforeBalance: parseFloat(tx.before_balance),
+            afterBalance: parseFloat(tx.after_balance),
+            createdAt: tx.created_at,
+          };
+        });
 
-        setTransactions(mapped);
-        setTotalCount(total);
-
-        if (resetPage) {
-          setCurrentPage(1);
-        }
+        setAllTransactions(mapped);
       } else {
-        setTransactions([]);
-        setTotalCount(0);
+        setAllTransactions([]);
       }
     } catch (error: any) {
       console.error("Error fetching wallet transactions:", error);
@@ -384,59 +373,48 @@ const UserWalletTransactions = () => {
         description: error.response?.data?.message || "Unable to fetch transactions",
         variant: "destructive",
       });
-      setTransactions([]);
-      setTotalCount(0);
+      setAllTransactions([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Debounce search term
+  // Apply filters whenever allTransactions, searchTerm, or statusFilter changes
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (userId) {
-        fetchTransactions(true);
-      }
-    }, 500); // 500ms debounce
+    const filtered = applyFilters(allTransactions);
+    setFilteredTransactions(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [allTransactions, searchTerm, statusFilter, startDate, endDate]);
 
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, searchTerm]);
-
-  // Fetch when dates or entries per page change
+  // Fetch when dates change
   useEffect(() => {
     if (userId && validateDates()) {
-      fetchTransactions(true);
+      fetchTransactions();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, startDate, endDate, entriesPerPage]);
-
-  // Fetch when page changes
-  useEffect(() => {
-    if (userId && currentPage > 1) {
-      fetchTransactions(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage]);
+  }, [userId, startDate, endDate]);
 
   /* -------------------- CLEAR FILTERS -------------------- */
 
   const clearAllFilters = () => {
     setSearchTerm("");
+    setStatusFilter("ALL");
     setStartDate(getTodayDate());
     setEndDate(getTodayDate());
     setDateError("");
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = searchTerm || startDate !== getTodayDate() || endDate !== getTodayDate();
+  const hasActiveFilters = 
+    searchTerm || 
+    statusFilter !== "ALL" || 
+    startDate !== getTodayDate() || 
+    endDate !== getTodayDate();
 
-  /* -------------------- EXPORT TO EXCEL (ALL DATA) -------------------- */
+  /* -------------------- EXPORT TO EXCEL (FILTERED DATA) -------------------- */
 
   const exportToExcel = async () => {
-    if (!userId) return;
-
-    if (totalCount === 0) {
+    if (filteredTransactions.length === 0) {
       toast({
         title: "No Data",
         description: "No transactions to export",
@@ -445,86 +423,47 @@ const UserWalletTransactions = () => {
       return;
     }
 
-    if (!validateDates()) return;
-
     setIsExporting(true);
 
     try {
-      const token = localStorage.getItem("authToken");
-      
-      // Fetch all data for export
-      const params = new URLSearchParams({
-        limit: totalCount.toString(),
-        offset: "0",
+      const exportData = filteredTransactions.map((tx, index) => {
+        return {
+          "S.No": index + 1,
+          "Date & Time": formatDateTimeExport(tx.createdAt),
+          "Transaction ID": tx.id,
+          "Type": tx.type,
+          "Reason": tx.reason,
+          "Amount (₹)": tx.amount.toFixed(2),
+          "Before Balance (₹)": tx.beforeBalance.toFixed(2),
+          "After Balance (₹)": tx.afterBalance.toFixed(2),
+          "Remarks": tx.remarks,
+        };
       });
 
-      if (searchTerm.trim()) {
-        params.append("search", searchTerm.trim());
-      }
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Wallet Transactions");
 
-      // Always send date filters with timestamps
-      if (startDate) {
-        params.append("start_date", `${startDate}T00:00:00`);
-      }
+      // Set column widths
+      worksheet["!cols"] = [
+        { wch: 8 },  // S.No
+        { wch: 20 }, // Date & Time
+        { wch: 20 }, // Transaction ID
+        { wch: 12 }, // Type
+        { wch: 20 }, // Reason
+        { wch: 15 }, // Amount
+        { wch: 18 }, // Before Balance
+        { wch: 18 }, // After Balance
+        { wch: 30 }, // Remarks
+      ];
 
-      if (endDate) {
-        params.append("end_date", `${endDate}T23:59:59`);
-      }
+      const fileName = `Wallet_Transactions_${new Date().toISOString().split("T")[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
 
-      const res = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/wallet/get/transaction/retailer/${userId}?${params.toString()}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (res.data.status === "success") {
-        const raw: WalletTransactionRaw[] = res.data?.data?.transactions || [];
-
-        const exportData = raw.map((tx, index) => {
-          const isCredit = !!tx.credit_amount;
-          const amount = parseFloat(tx.credit_amount || tx.debit_amount || "0");
-          
-          return {
-            "S.No": index + 1,
-            "Date & Time": formatDateTimeExport(tx.created_at),
-            "Transaction ID": tx.wallet_transaction_id,
-            "Type": isCredit ? "CREDIT" : "DEBIT",
-            "Reason": tx.transaction_reason,
-            "Amount (₹)": amount.toFixed(2),
-            "Before Balance (₹)": parseFloat(tx.before_balance).toFixed(2),
-            "After Balance (₹)": parseFloat(tx.after_balance).toFixed(2),
-            "Remarks": tx.remarks,
-          };
-        });
-
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Wallet Transactions");
-
-        // Set column widths
-        worksheet["!cols"] = [
-          { wch: 8 },  // S.No
-          { wch: 20 }, // Date & Time
-          { wch: 20 }, // Transaction ID
-          { wch: 12 }, // Type
-          { wch: 20 }, // Reason
-          { wch: 15 }, // Amount
-          { wch: 18 }, // Before Balance
-          { wch: 18 }, // After Balance
-          { wch: 30 }, // Remarks
-        ];
-
-        const fileName = `Wallet_Transactions_${new Date().toISOString().split("T")[0]}.xlsx`;
-        XLSX.writeFile(workbook, fileName);
-
-        toast({
-          title: "Success",
-          description: `Exported ${exportData.length} transaction${exportData.length > 1 ? 's' : ''}`,
-        });
-      }
+      toast({
+        title: "Success",
+        description: `Exported ${exportData.length} transaction${exportData.length > 1 ? 's' : ''}`,
+      });
     } catch (error) {
       console.error("Export error:", error);
       toast({
@@ -589,9 +528,11 @@ const UserWalletTransactions = () => {
 
   /* -------------------- PAGINATION -------------------- */
 
+  const totalCount = filteredTransactions.length;
   const totalPages = Math.ceil(totalCount / entriesPerPage);
   const startIndex = (currentPage - 1) * entriesPerPage;
-  const endIndex = Math.min(startIndex + transactions.length, totalCount);
+  const endIndex = Math.min(startIndex + entriesPerPage, totalCount);
+  const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
 
   /* -------------------- RENDER -------------------- */
 
@@ -644,7 +585,7 @@ const UserWalletTransactions = () => {
                   {isExporting ? "Exporting..." : "Export to Excel"}
                 </Button>
                 <Button
-                  onClick={() => fetchTransactions(true)}
+                  onClick={() => fetchTransactions()}
                   className="bg-white text-primary hover:bg-white/90 font-semibold"
                   disabled={loading}
                 >
@@ -663,7 +604,7 @@ const UserWalletTransactions = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-primary" />
+                    <Filter className="h-4 w-4 text-primary" />
                     Filters
                   </h3>
                   {hasActiveFilters && (
@@ -687,7 +628,7 @@ const UserWalletTransactions = () => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   {/* Search */}
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Search</Label>
@@ -700,6 +641,29 @@ const UserWalletTransactions = () => {
                     {searchTerm && (
                       <p className="text-xs text-muted-foreground">
                         Searching for: "{searchTerm}"
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Status Filter */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Status</Label>
+                    <Select
+                      value={statusFilter}
+                      onValueChange={(value: "ALL" | "CREDIT" | "DEBIT") => setStatusFilter(value)}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All Transactions</SelectItem>
+                        <SelectItem value="CREDIT">Credit Only</SelectItem>
+                        <SelectItem value="DEBIT">Debit Only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {statusFilter !== "ALL" && (
+                      <p className="text-xs text-muted-foreground">
+                        Showing: {statusFilter} transactions
                       </p>
                     )}
                   </div>
@@ -770,6 +734,11 @@ const UserWalletTransactions = () => {
                         year: "numeric",
                       })}
                     </span>
+                    {statusFilter !== "ALL" && (
+                      <span className="bg-green-100 text-green-700 px-2 py-1 rounded">
+                        Status: {statusFilter}
+                      </span>
+                    )}
                     {searchTerm && (
                       <span className="bg-blue-100 px-2 py-1 rounded">
                         Search: "{searchTerm}"
@@ -825,7 +794,7 @@ const UserWalletTransactions = () => {
                     <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
                     <p className="text-sm text-muted-foreground">Loading transactions...</p>
                   </div>
-                ) : transactions.length === 0 ? (
+                ) : paginatedTransactions.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20">
                     <FileText className="h-12 w-12 text-muted-foreground mb-4" />
                     <p className="text-lg font-semibold text-gray-900">
@@ -871,7 +840,7 @@ const UserWalletTransactions = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {transactions.map((tx, idx) => (
+                      {paginatedTransactions.map((tx, idx) => (
                         <TableRow
                           key={tx.id}
                           className={`border-b hover:bg-gray-50 ${

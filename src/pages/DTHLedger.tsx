@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,30 +36,64 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
   /* -------------------- HELPER: Get Today's Date -------------------- */
   const getTodayDate = () => new Date().toISOString().split("T")[0];
   
-  const [transactions, setTransactions] = useState<DTHTransaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<DTHTransaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<DTHTransaction[]>([]);
   const [loading, setLoading] = useState(false);
-  const [totalRecords, setTotalRecords] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [startDate, setStartDate] = useState(getTodayDate());
   const [endDate, setEndDate] = useState(getTodayDate());
   const [dateError, setDateError] = useState<string>("");
 
-  // Debounce search term
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 500);
+  /* -------------------- CLIENT-SIDE FILTERING -------------------- */
 
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
+  const applyFilters = useCallback((transactions: DTHTransaction[]) => {
+    let filtered = [...transactions];
+
+    // 1. Date filtering (already done by backend, but keep for safety)
+    if (startDate || endDate) {
+      filtered = filtered.filter((tx) => {
+        const txDate = new Date(tx.created_at);
+        const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+        const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+        
+        if (start && txDate < start) return false;
+        if (end && txDate > end) return false;
+        
+        return true;
+      });
+    }
+
+    // 2. Status filtering (FRONTEND ONLY)
+    if (statusFilter !== "ALL") {
+      filtered = filtered.filter((tx) => 
+        (tx.status ?? "").toUpperCase() === statusFilter.toUpperCase()
+      );
+    }
+
+    // 3. Search filtering (FRONTEND ONLY)
+    if (searchTerm.trim()) {
+      const search = searchTerm.trim().toLowerCase();
+      filtered = filtered.filter((tx) => {
+        return (
+          String(tx.dth_transaction_id ?? "").includes(search) ||
+          (tx.customer_id ?? "").toLowerCase().includes(search) ||
+          (tx.operator_name ?? "").toLowerCase().includes(search) ||
+          (tx.retailer_name ?? "").toLowerCase().includes(search) ||
+          (tx.business_name ?? "").toLowerCase().includes(search) ||
+          (tx.partner_request_id ?? "").toLowerCase().includes(search)
+        );
+      });
+    }
+
+    return filtered;
+  }, [startDate, endDate, statusFilter, searchTerm]);
 
   /* -------------------- DATE VALIDATION -------------------- */
 
-  const validateDates = (): boolean => {
+  const validateDates = useCallback((): boolean => {
     setDateError("");
 
     // If no dates are selected, validation passes
@@ -133,7 +167,7 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
     }
 
     return true;
-  };
+  }, [startDate, endDate, toast]);
 
   /* -------------------- HANDLE DATE CHANGES -------------------- */
 
@@ -165,7 +199,13 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
     }
   };
 
-  const buildQueryParams = (params: any) => {
+  // Build query params helper - only add params that have values (NO SEARCH, NO STATUS)
+  const buildQueryParams = useCallback((params: {
+    limit?: number;
+    offset?: number;
+    start_date?: string;
+    end_date?: string;
+  }) => {
     const queryParams = new URLSearchParams();
     
     // Always add limit and offset
@@ -184,20 +224,11 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
       queryParams.append("end_date", `${params.end_date.trim()}T23:59:59`);
     }
     
-    // Add status if not ALL
-    if (params.status && params.status !== "ALL") {
-      queryParams.append("status", params.status);
-    }
-    
-    // Add search if present
-    if (params.search && params.search.trim()) {
-      queryParams.append("search", params.search.trim());
-    }
-    
     return queryParams.toString();
-  };
+  }, []);
 
-  const fetchTransactions = async () => {
+  // Fetch transactions (NO SEARCH, NO STATUS)
+  const fetchTransactions = useCallback(async () => {
     if (!userId) return;
     
     if (!validateDates()) return;
@@ -206,14 +237,12 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
     setLoading(true);
 
     try {
-      const offset = (currentPage - 1) * entriesPerPage;
+      // Build query params - REMOVE search and status
       const queryString = buildQueryParams({
-        limit: entriesPerPage,
-        offset,
+        limit: 10000, // Fetch large number to get all data
+        offset: 0,
         start_date: startDate,
         end_date: endDate,
-        status: statusFilter,
-        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
@@ -224,34 +253,17 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
       if (response.data?.status === "success" && Array.isArray(response.data.data?.recharges)) {
         const raw: DTHTransaction[] = response.data.data.recharges || [];
         
-        // Client-side date filtering as additional safety
-        const filtered = raw.filter((tx) => {
-          if (!startDate && !endDate) return true;
-          
-          const txDate = new Date(tx.created_at);
-          const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
-          const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
-          
-          if (start && txDate < start) return false;
-          if (end && txDate > end) return false;
-          
-          return true;
-        });
-        
-        const sorted = filtered.sort(
+        const sorted = raw.sort(
           (a: DTHTransaction, b: DTHTransaction) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
         
-        setTransactions(sorted);
-        setTotalRecords(response.data.data?.total || sorted.length);
+        setAllTransactions(sorted); // Store all data
       } else {
-        setTransactions([]);
-        setTotalRecords(0);
+        setAllTransactions([]);
       }
     } catch (error: any) {
-      setTransactions([]);
-      setTotalRecords(0);
+      setAllTransactions([]);
       toast({
         title: "Error",
         description: error.response?.data?.message || "Failed to fetch DTH transactions",
@@ -260,14 +272,22 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId, startDate, endDate, validateDates, buildQueryParams, toast]);
 
+  // Apply filters whenever allTransactions, searchTerm, or statusFilter changes
   useEffect(() => {
-    if (userId && validateDates()) {
+    const filtered = applyFilters(allTransactions);
+    setFilteredTransactions(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [allTransactions, applyFilters]);
+
+  // Fetch only when dates change (not search or status)
+  useEffect(() => {
+    if (userId) {
       fetchTransactions();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
+  }, [userId, startDate, endDate]);
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "-";
@@ -287,8 +307,8 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
   const formatAmount = (amount: number) =>
     amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const getStatusColor = (status: string) => {
-    switch (status.toUpperCase()) {
+  const getStatusColor = (status?: string) => {
+    switch ((status ?? "").toUpperCase()) {
       case "SUCCESS": return "bg-green-600 text-white";
       case "FAILED": case "FAILURE": return "bg-red-600 text-white";
       case "PENDING": return "bg-yellow-600 text-white";
@@ -296,10 +316,9 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
     }
   };
 
+  // Export to Excel - use filtered data
   const exportToExcel = async () => {
-    if (!userId) return;
-
-    if (totalRecords === 0) {
+    if (filteredTransactions.length === 0) {
       toast({ 
         title: "No Data", 
         description: "No transactions to export", 
@@ -308,41 +327,8 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
       return;
     }
 
-    if (!validateDates()) return;
-
     try {
-      toast({
-        title: "Exporting",
-        description: "Fetching all data for export...",
-      });
-
-      const token = localStorage.getItem("authToken");
-      const queryString = buildQueryParams({
-        limit: totalRecords,
-        offset: 0,
-        start_date: startDate,
-        end_date: endDate,
-        status: statusFilter,
-        search: debouncedSearchTerm,
-      });
-
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/dth_recharge/get/${userId}?${queryString}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      let allData: DTHTransaction[] = response.data?.data?.recharges || [];
-
-      if (allData.length === 0) {
-        toast({
-          title: "No Data",
-          description: "No transactions to export",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const exportData = allData.map((tx, i) => ({
+      const exportData = filteredTransactions.map((tx, i) => ({
         "S.No": i + 1,
         "Transaction ID": tx.dth_transaction_id,
         "Date & Time": formatDate(tx.created_at),
@@ -383,7 +369,7 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
       
       toast({ 
         title: "Success", 
-        description: `Exported ${allData.length} transactions` 
+        description: `Exported ${exportData.length} transaction${exportData.length > 1 ? 's' : ''}` 
       });
     } catch (error) {
       console.error("Export error:", error);
@@ -410,7 +396,12 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
     startDate !== getTodayDate() || 
     endDate !== getTodayDate();
 
+  // Pagination with filtered data
+  const totalRecords = filteredTransactions.length;
   const totalPages = Math.ceil(totalRecords / entriesPerPage);
+  const startIdx = (currentPage - 1) * entriesPerPage;
+  const endIdx = startIdx + entriesPerPage;
+  const paginatedTransactions = filteredTransactions.slice(startIdx, endIdx);
 
   return (
     <>
@@ -443,15 +434,54 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Search */}
+          <div className="space-y-2">
+            <Label>Search</Label>
+            <Input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search transactions..."
+              className="h-9"
+            />
+            {searchTerm && (
+              <p className="text-xs text-muted-foreground">
+                Searching for: "{searchTerm}"
+              </p>
+            )}
+          </div>
+
+          {/* Status Filter */}
+          <div className="space-y-2">
+            <Label>Transaction Status</Label>
+            <Select
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Statuses</SelectItem>
+                <SelectItem value="SUCCESS">Success</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="FAILED">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+            {statusFilter !== "ALL" && (
+              <p className="text-xs text-muted-foreground">
+                Showing: {statusFilter} transactions
+              </p>
+            )}
+          </div>
+
+          {/* Start Date */}
           <div className="space-y-2">
             <Label>Start Date</Label>
             <Input
               type="date"
               value={startDate}
-              onChange={(e) => {
-                handleStartDateChange(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => handleStartDateChange(e.target.value)}
               max={getTodayDate()}
               className={`h-9 ${dateError && startDate ? "border-red-500" : ""}`}
             />
@@ -466,15 +496,13 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
             )}
           </div>
 
+          {/* End Date */}
           <div className="space-y-2">
             <Label>End Date</Label>
             <Input
               type="date"
               value={endDate}
-              onChange={(e) => {
-                handleEndDateChange(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => handleEndDateChange(e.target.value)}
               min={startDate || undefined}
               max={getTodayDate()}
               className={`h-9 ${dateError && endDate ? "border-red-500" : ""}`}
@@ -486,46 +514,6 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
                   month: "short",
                   day: "numeric",
                 })}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>Transaction Status</Label>
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => {
-                setStatusFilter(value);
-                setCurrentPage(1);
-              }}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Statuses</SelectItem>
-                <SelectItem value="SUCCESS">Success</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
-                <SelectItem value="FAILED">Failed</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Search</Label>
-            <Input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
-              placeholder="Search transactions..."
-              className="h-9"
-            />
-            {searchTerm && (
-              <p className="text-xs text-muted-foreground">
-                Searching for: "{searchTerm}"
               </p>
             )}
           </div>
@@ -553,7 +541,7 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
                 })}
               </span>
               {statusFilter !== "ALL" && (
-                <span className="bg-blue-100 px-2 py-1 rounded">
+                <span className="bg-green-100 text-green-700 px-2 py-1 rounded">
                   Status: {statusFilter}
                 </span>
               )}
@@ -598,12 +586,12 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-600">
-              Showing {totalRecords > 0 ? (currentPage - 1) * entriesPerPage + 1 : 0} to{" "}
-              {Math.min(currentPage * entriesPerPage, totalRecords)} of {totalRecords} records
+              Showing {totalRecords > 0 ? startIdx + 1 : 0} to{" "}
+              {endIdx > totalRecords ? totalRecords : endIdx} of {totalRecords} records
             </div>
             <Button 
               onClick={exportToExcel} 
-              disabled={transactions.length === 0} 
+              disabled={filteredTransactions.length === 0} 
               variant="outline" 
               size="sm"
             >
@@ -645,7 +633,7 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
                     <p className="text-gray-500">Loading transactions...</p>
                   </TableCell>
                 </TableRow>
-              ) : transactions.length === 0 ? (
+              ) : paginatedTransactions.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-12">
                     <p className="text-gray-500 font-medium">No transactions found</p>
@@ -657,7 +645,7 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
                   </TableCell>
                 </TableRow>
               ) : (
-                transactions.map((transaction) => (
+                paginatedTransactions.map((transaction) => (
                   <TableRow key={transaction.dth_transaction_id}>
                     <TableCell className="text-center whitespace-nowrap">
                       {formatDate(transaction.created_at)}

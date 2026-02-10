@@ -91,13 +91,12 @@ export default function ServiceReportSettlement() {
   };
 
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]); // All fetched data
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]); // After filters
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
 
   // Filter states - start with today's date
   const [startDate, setStartDate] = useState(getTodayDate());
@@ -110,15 +109,6 @@ export default function ServiceReportSettlement() {
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
-
-  // Debounce search term
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
 
   // Decode token
   useEffect(() => {
@@ -155,6 +145,50 @@ export default function ServiceReportSettlement() {
       window.location.href = "/login";
     }
   }, []);
+
+  /* -------------------- CLIENT-SIDE FILTERING -------------------- */
+
+  const applyFilters = (transactions: Transaction[]) => {
+    let filtered = [...transactions];
+
+    // 1. Date filtering (already done by backend, but keep for safety)
+    if (startDate || endDate) {
+      filtered = filtered.filter((tx) => {
+        const txDate = new Date(tx.created_at);
+        const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+        const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+        
+        if (start && txDate < start) return false;
+        if (end && txDate > end) return false;
+        
+        return true;
+      });
+    }
+
+    // 2. Status filtering (FRONTEND ONLY)
+    if (statusFilter !== "ALL") {
+      filtered = filtered.filter((tx) => 
+        tx.transaction_status.toUpperCase() === statusFilter.toUpperCase()
+      );
+    }
+
+    // 3. Search filtering (FRONTEND ONLY)
+    if (searchTerm.trim()) {
+      const search = searchTerm.trim().toLowerCase();
+      filtered = filtered.filter((tx) => {
+        return (
+          tx.operator_transaction_id?.toLowerCase().includes(search) ||
+          tx.mobile_number.toLowerCase().includes(search) ||
+          tx.beneficiary_name.toLowerCase().includes(search) ||
+          tx.account_number.toLowerCase().includes(search) ||
+          tx.bank_name.toLowerCase().includes(search) ||
+          tx.ifsc_code.toLowerCase().includes(search)
+        );
+      });
+    }
+
+    return filtered;
+  };
 
   /* -------------------- DATE VALIDATION -------------------- */
 
@@ -282,8 +316,6 @@ export default function ServiceReportSettlement() {
     offset?: number;
     start_date?: string;
     end_date?: string;
-    status?: string;
-    search?: string;
   }) => {
     const queryParams = new URLSearchParams();
     
@@ -303,84 +335,47 @@ export default function ServiceReportSettlement() {
       queryParams.append('end_date', `${params.end_date.trim()}T23:59:59`);
     }
     
-    // Add status if not ALL
-    if (params.status && params.status !== 'ALL') {
-      queryParams.append('status', params.status);
-    }
-    
-    // Add search if present
-    if (params.search && params.search.trim()) {
-      queryParams.append('search', params.search.trim());
-    }
-    
     return queryParams.toString();
   };
 
-  // Fetch transactions with query params
+  // Fetch transactions with query params (NO SEARCH, NO STATUS)
   const fetchTransactions = async () => {
     if (!tokenData?.user_id) return;
-
     if (!validateDates()) return;
 
     const token = localStorage.getItem("authToken");
     setLoading(true);
 
     try {
-      const offset = (currentPage - 1) * entriesPerPage;
+      // Build query params - REMOVE search and status
       const queryString = buildQueryParams({
-        limit: entriesPerPage,
-        offset: offset,
+        limit: 10000, // Fetch large number to get all data
+        offset: 0,
         start_date: startDate,
         end_date: endDate,
-        status: statusFilter,
-        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
         `${import.meta.env.VITE_API_BASE_URL}/payout/get/${tokenData.user_id}?${queryString}`,
         {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
 
-      // ✅ CORRECTED: Backend returns "transactions" not "payout_transactions"
-      if (
-        response.data?.status === "success" &&
-        Array.isArray(response.data.data?.transactions)
-      ) {
+      if (response.data?.status === "success" && Array.isArray(response.data.data?.transactions)) {
         const raw: Transaction[] = response.data.data.transactions || [];
         
-        // Client-side date filtering as additional safety
-        const filtered = raw.filter((tx) => {
-          if (!startDate && !endDate) return true;
-          
-          const txDate = new Date(tx.created_at);
-          const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
-          const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
-          
-          if (start && txDate < start) return false;
-          if (end && txDate > end) return false;
-          
-          return true;
-        });
-
-        const sortedTransactions = filtered.sort(
-          (a: Transaction, b: Transaction) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        const sortedTransactions = raw.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
-        setTransactions(sortedTransactions);
-        setTotalRecords(response.data.data?.total || sortedTransactions.length);
+        setAllTransactions(sortedTransactions); // Store all data
       } else {
-        setTransactions([]);
-        setTotalRecords(0);
+        setAllTransactions([]);
       }
     } catch (error: any) {
       console.error("Error fetching transactions:", error);
-      setTransactions([]);
-      setTotalRecords(0);
+      setAllTransactions([]);
       toast({
         title: "Error",
         description: error.response?.data?.message || "Failed to fetch transactions",
@@ -391,13 +386,20 @@ export default function ServiceReportSettlement() {
     }
   };
 
-  // Fetch transactions when filters or pagination changes
+  // Apply filters whenever allTransactions, searchTerm, or statusFilter changes
+  useEffect(() => {
+    const filtered = applyFilters(allTransactions);
+    setFilteredTransactions(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [allTransactions, searchTerm, statusFilter, startDate, endDate]);
+
+  // Fetch only when dates change (not search or status)
   useEffect(() => {
     if (tokenData && validateDates()) {
       fetchTransactions();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokenData, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
+  }, [tokenData, startDate, endDate]);
 
   // Auto-open receipt if navigated with transaction ID
   useEffect(() => {
@@ -406,8 +408,8 @@ export default function ServiceReportSettlement() {
     const txnIdFromStorage = localStorage.getItem("autoOpenReceipt");
     const txnIdToOpen = txnIdFromState || txnIdFromStorage;
 
-    if (txnIdToOpen && transactions.length > 0) {
-      const transaction = transactions.find(
+    if (txnIdToOpen && filteredTransactions.length > 0) {
+      const transaction = filteredTransactions.find(
         (txn) => txn.operator_transaction_id === txnIdToOpen
       );
       if (transaction) {
@@ -419,7 +421,7 @@ export default function ServiceReportSettlement() {
         }, 500);
       }
     }
-  }, [location.state, transactions]);
+  }, [location.state, filteredTransactions]);
 
   // Clear filters
   const clearFilters = () => {
@@ -438,11 +440,9 @@ export default function ServiceReportSettlement() {
     statusFilter !== "ALL" || 
     searchTerm;
 
-  // Export to Excel - fetch all data
+  // Export to Excel - use filtered data
   const exportToExcel = async () => {
-    if (!tokenData?.user_id) return;
-
-    if (totalRecords === 0) {
+    if (filteredTransactions.length === 0) {
       toast({
         title: "No Data",
         description: "No transactions to export",
@@ -451,48 +451,10 @@ export default function ServiceReportSettlement() {
       return;
     }
 
-    if (!validateDates()) return;
-
     setIsExporting(true);
 
     try {
-      toast({
-        title: "Exporting",
-        description: "Fetching all data for export...",
-      });
-
-      const token = localStorage.getItem("authToken");
-      const queryString = buildQueryParams({
-        limit: totalRecords,
-        offset: 0,
-        start_date: startDate,
-        end_date: endDate,
-        status: statusFilter,
-        search: debouncedSearchTerm,
-      });
-
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/payout/get/${tokenData.user_id}?${queryString}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      // ✅ CORRECTED: Backend returns "transactions" not "payout_transactions"
-      let allData: Transaction[] = response.data?.data?.transactions || [];
-
-      if (allData.length === 0) {
-        toast({
-          title: "No Data",
-          description: "No transactions to export",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const exportData = allData.map((tx, index) => ({
+      const exportData = filteredTransactions.map((tx, index) => ({
         "S.No": index + 1,
         "Transaction ID": tx.operator_transaction_id || "-",
         "Date & Time": formatDate(tx.created_at),
@@ -538,7 +500,7 @@ export default function ServiceReportSettlement() {
 
       toast({
         title: "Success",
-        description: `Exported ${allData.length} transactions to Excel`,
+        description: `Exported ${exportData.length} transaction${exportData.length > 1 ? 's' : ''}`,
       });
     } catch (error) {
       console.error("Export error:", error);
@@ -605,8 +567,12 @@ export default function ServiceReportSettlement() {
     }
   };
 
-  // Pagination
+  // Pagination with filtered data
+  const totalRecords = filteredTransactions.length;
   const totalPages = Math.ceil(totalRecords / entriesPerPage);
+  const startIdx = (currentPage - 1) * entriesPerPage;
+  const endIdx = startIdx + entriesPerPage;
+  const paginatedTransactions = filteredTransactions.slice(startIdx, endIdx);
 
   const handleViewReceipt = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
@@ -750,11 +716,11 @@ export default function ServiceReportSettlement() {
               <div className="flex gap-3">
                 <Button
                   onClick={exportToExcel}
-                  disabled={isExporting || transactions.length === 0}
+                  disabled={isExporting || filteredTransactions.length === 0}
                   variant="secondary"
                   className="bg-white/20 hover:bg-white/30 text-white"
                 >
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  <FileSpreadsheet className={`h-4 w-4 mr-2 ${isExporting ? "animate-pulse" : ""}`} />
                   {isExporting ? "Exporting..." : "Export to Excel"}
                 </Button>
                 <Button
@@ -801,6 +767,46 @@ export default function ServiceReportSettlement() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Search */}
+              <div className="space-y-2">
+                <Label htmlFor="search">Search</Label>
+                <Input
+                  id="search"
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search transactions..."
+                  className="h-9"
+                />
+                {searchTerm && (
+                  <p className="text-xs text-muted-foreground">
+                    Searching for: "{searchTerm}"
+                  </p>
+                )}
+              </div>
+
+              {/* Status Filter */}
+              <div className="space-y-2">
+                <Label>Transaction Status</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Statuses</SelectItem>
+                    <SelectItem value="SUCCESS">Success</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
+                    <SelectItem value="FAILED">Failed</SelectItem>
+                    <SelectItem value="FAILURE">Failure</SelectItem>
+                  </SelectContent>
+                </Select>
+                {statusFilter !== "ALL" && (
+                  <p className="text-xs text-muted-foreground">
+                    Showing: {statusFilter} transactions
+                  </p>
+                )}
+              </div>
+
               {/* Start Date */}
               <div className="space-y-2">
                 <Label htmlFor="startDate">Start Date</Label>
@@ -808,10 +814,7 @@ export default function ServiceReportSettlement() {
                   id="startDate"
                   type="date"
                   value={startDate}
-                  onChange={(e) => {
-                    handleStartDateChange(e.target.value);
-                    setCurrentPage(1);
-                  }}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
                   max={getTodayDate()}
                   className={`h-9 ${dateError && startDate ? "border-red-500" : ""}`}
                 />
@@ -833,10 +836,7 @@ export default function ServiceReportSettlement() {
                   id="endDate"
                   type="date"
                   value={endDate}
-                  onChange={(e) => {
-                    handleEndDateChange(e.target.value);
-                    setCurrentPage(1);
-                  }}
+                  onChange={(e) => handleEndDateChange(e.target.value)}
                   min={startDate || undefined}
                   max={getTodayDate()}
                   className={`h-9 ${dateError && endDate ? "border-red-500" : ""}`}
@@ -848,47 +848,6 @@ export default function ServiceReportSettlement() {
                       month: "short",
                       day: "numeric",
                     })}
-                  </p>
-                )}
-              </div>
-
-              {/* Status Filter */}
-              <div className="space-y-2">
-                <Label>Transaction Status</Label>
-                <Select value={statusFilter} onValueChange={(value) => {
-                  setStatusFilter(value);
-                  setCurrentPage(1);
-                }}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All Statuses</SelectItem>
-                    <SelectItem value="SUCCESS">Success</SelectItem>
-                    <SelectItem value="PENDING">Pending</SelectItem>
-                    <SelectItem value="FAILED">Failed</SelectItem>
-                    <SelectItem value="FAILURE">Failure</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Search */}
-              <div className="space-y-2">
-                <Label htmlFor="search">Search</Label>
-                <Input
-                  id="search"
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  placeholder="Search transactions..."
-                  className="h-9"
-                />
-                {searchTerm && (
-                  <p className="text-xs text-muted-foreground">
-                    Searching for: "{searchTerm}"
                   </p>
                 )}
               </div>
@@ -916,7 +875,7 @@ export default function ServiceReportSettlement() {
                     })}
                   </span>
                   {statusFilter !== "ALL" && (
-                    <span className="bg-blue-100 px-2 py-1 rounded">
+                    <span className="bg-green-100 text-green-700 px-2 py-1 rounded">
                       Status: {statusFilter}
                     </span>
                   )}
@@ -960,8 +919,8 @@ export default function ServiceReportSettlement() {
                 <span className="text-sm text-gray-600">entries</span>
               </div>
               <div className="text-sm text-gray-600">
-                Showing {totalRecords > 0 ? (currentPage - 1) * entriesPerPage + 1 : 0} to{" "}
-                {Math.min(currentPage * entriesPerPage, totalRecords)} of {totalRecords} records
+                Showing {totalRecords > 0 ? startIdx + 1 : 0} to{" "}
+                {endIdx > totalRecords ? totalRecords : endIdx} of {totalRecords} records
               </div>
             </div>
 
@@ -997,7 +956,7 @@ export default function ServiceReportSettlement() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ) : transactions.length === 0 ? (
+                  ) : paginatedTransactions.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={14} className="text-center py-12">
                         <div className="flex flex-col items-center gap-3">
@@ -1016,10 +975,10 @@ export default function ServiceReportSettlement() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    transactions.map((transaction, index) => (
+                    paginatedTransactions.map((transaction, index) => (
                       <TableRow key={transaction.payout_transaction_id}>
                         <TableCell className="text-center">
-                          {(currentPage - 1) * entriesPerPage + index + 1}
+                          {startIdx + index + 1}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-center">
                           {formatDate(transaction.created_at)}

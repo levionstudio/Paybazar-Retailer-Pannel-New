@@ -253,44 +253,28 @@ export default function DTHRechargeReport() {
   };
 
   // Build query params helper
-  const buildQueryParams = (params: {
-    limit?: number;
-    offset?: number;
-    start_date?: string;
-    end_date?: string;
-    status?: string;
-    search?: string;
-  }) => {
-    const queryParams = new URLSearchParams();
+ const buildQueryParams = (params: {
+  limit?: number;
+  offset?: number;
+  start_date?: string;
+  end_date?: string;
+}) => {
+  const queryParams = new URLSearchParams();
 
-    // Always add limit and offset
-    if (params.limit !== undefined) {
-      queryParams.append("limit", params.limit.toString());
-    }
-    if (params.offset !== undefined) {
-      queryParams.append("offset", params.offset.toString());
-    }
-    
-    // Add date params with timestamps for proper filtering
-    if (params.start_date && params.start_date.trim()) {
-      queryParams.append("start_date", `${params.start_date.trim()}T00:00:00`);
-    }
-    if (params.end_date && params.end_date.trim()) {
-      queryParams.append("end_date", `${params.end_date.trim()}T23:59:59`);
-    }
-    
-    // Add status if not ALL
-    if (params.status && params.status !== "ALL") {
-      queryParams.append("status", params.status);
-    }
-    
-    // Add search if present
-    if (params.search && params.search.trim()) {
-      queryParams.append("search", params.search.trim());
-    }
+  if (params.limit !== undefined)
+    queryParams.append("limit", params.limit.toString());
 
-    return queryParams.toString();
-  };
+  if (params.offset !== undefined)
+    queryParams.append("offset", params.offset.toString());
+
+  if (params.start_date)
+    queryParams.append("start_date", `${params.start_date}T00:00:00`);
+
+  if (params.end_date)
+    queryParams.append("end_date", `${params.end_date}T23:59:59`);
+
+  return queryParams.toString();
+};
 
   // Fetch transactions with query params
   const fetchTransactions = async () => {
@@ -308,8 +292,6 @@ export default function DTHRechargeReport() {
         offset: offset,
         start_date: startDate,
         end_date: endDate,
-        status: statusFilter,
-        search: debouncedSearchTerm,
       });
 
       const response = await axios.get(
@@ -320,6 +302,7 @@ export default function DTHRechargeReport() {
           },
         }
       );
+      
 
       if (
         response.data?.status === "success" &&
@@ -329,6 +312,7 @@ export default function DTHRechargeReport() {
         
         // Client-side date filtering as additional safety
         const filtered = raw.filter((tx) => {
+          
           if (!startDate && !endDate) return true;
           
           const txDate = new Date(tx.created_at);
@@ -340,13 +324,35 @@ export default function DTHRechargeReport() {
           
           return true;
         });
+        const normalized = raw.map((tx) => ({
+  ...tx,
+  customer_id: String(tx.customer_id ?? ""),
+  operator_name: tx.operator_name ?? "",
+  partner_request_id: tx.partner_request_id ?? "",
+  status: tx.status ?? "",
+  amount: tx.amount ?? 0,
+  before_balance: tx.before_balance ?? 0,
+  after_balance: tx.after_balance ?? 0,
+  commision: tx.commision ?? 0,
+}));
+
 
         const sortedTransactions = filtered.sort(
           (a: DTHRechargeTransaction, b: DTHRechargeTransaction) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
-        setTransactions(sortedTransactions);
+       const frontendFiltered = applyFrontendFilters(normalized);
+
+setTotalRecords(frontendFiltered.length);
+
+const paginated = frontendFiltered.slice(
+  (currentPage - 1) * entriesPerPage,
+  currentPage * entriesPerPage
+);
+
+setTransactions(paginated);
+
         setTotalRecords(response.data.data?.total || sortedTransactions.length);
       } else {
         setTransactions([]);
@@ -366,6 +372,32 @@ export default function DTHRechargeReport() {
       setLoading(false);
     }
   };
+const applyFrontendFilters = (
+  data: DTHRechargeTransaction[]
+) => {
+  let filtered = [...data];
+
+  // STATUS FILTER
+  if (statusFilter !== "ALL") {
+    filtered = filtered.filter(
+      (tx) => (tx.status ?? "").toUpperCase() === statusFilter
+    );
+  }
+
+  // SEARCH FILTER
+  if (searchTerm.trim()) {
+    const search = searchTerm.toLowerCase();
+
+    filtered = filtered.filter((tx) =>
+      String(tx.customer_id ?? "").toLowerCase().includes(search) ||
+      String(tx.operator_name ?? "").toLowerCase().includes(search) ||
+      String(tx.partner_request_id ?? "").toLowerCase().includes(search) ||
+      String(tx.dth_transaction_id ?? "").includes(search)
+    );
+  }
+
+  return filtered;
+};
 
   // Fetch transactions when filters or pagination changes
   useEffect(() => {
@@ -374,6 +406,10 @@ export default function DTHRechargeReport() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retailerId, currentPage, entriesPerPage, startDate, endDate, statusFilter, debouncedSearchTerm]);
+  useEffect(() => {
+  setCurrentPage(1);
+}, [searchTerm, statusFilter]);
+
 
   // Clear filters
   const clearFilters = () => {
@@ -393,10 +429,39 @@ export default function DTHRechargeReport() {
     searchTerm;
 
   // Export to Excel - fetch all data
-  const exportToExcel = async () => {
-    if (!retailerId) return;
+const exportToExcel = async () => {
+  if (!retailerId) return;
+  if (!validateDates()) return;
 
-    if (totalRecords === 0) {
+  setIsExporting(true);
+
+  try {
+    toast({
+      title: "Exporting",
+      description: "Preparing Excel file...",
+    });
+
+    const token = localStorage.getItem("authToken");
+
+    // 🔹 Backend: date + pagination ONLY
+    const queryString = buildQueryParams({
+      limit: totalRecords,
+      offset: 0,
+      start_date: startDate,
+      end_date: endDate,
+    });
+
+    const response = await axios.get(
+      `${import.meta.env.VITE_API_BASE_URL}/dth_recharge/get/${retailerId}?${queryString}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    let allData: DTHRechargeTransaction[] =
+      response.data?.data?.recharges || [];
+
+    if (allData.length === 0) {
       toast({
         title: "No Data",
         description: "No transactions to export",
@@ -405,98 +470,103 @@ export default function DTHRechargeReport() {
       return;
     }
 
-    if (!validateDates()) return;
+    /* ---------------- NORMALIZE DATA ---------------- */
+    let filteredData = allData.map((tx) => ({
+      ...tx,
+      customer_id: String(tx.customer_id ?? ""),
+      operator_name: String(tx.operator_name ?? ""),
+      status: String(tx.status ?? ""),
+      amount: Number(tx.amount ?? 0),
+      before_balance: Number(tx.before_balance ?? 0),
+      after_balance: Number(tx.after_balance ?? 0),
+      commision: Number(tx.commision ?? 0),
+    }));
 
-    setIsExporting(true);
-
-    try {
-      toast({
-        title: "Exporting",
-        description: "Fetching all data for export...",
-      });
-
-      const token = localStorage.getItem("authToken");
-      const queryString = buildQueryParams({
-        limit: totalRecords,
-        offset: 0,
-        start_date: startDate,
-        end_date: endDate,
-        status: statusFilter,
-        search: debouncedSearchTerm,
-      });
-
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/dth_recharge/get/${retailerId}?${queryString}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+    /* ---------------- FRONTEND STATUS FILTER ---------------- */
+    if (statusFilter !== "ALL") {
+      filteredData = filteredData.filter(
+        (tx) => tx.status.toUpperCase() === statusFilter.toUpperCase()
       );
+    }
 
-      let allData: DTHRechargeTransaction[] =
-        response.data?.data?.recharges || [];
+    /* ---------------- FRONTEND SEARCH FILTER ---------------- */
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      filteredData = filteredData.filter((tx) =>
+        tx.customer_id.toLowerCase().includes(search) ||
+        tx.operator_name.toLowerCase().includes(search) ||
+        String(tx.dth_transaction_id).includes(search)
+      );
+    }
 
-      if (allData.length === 0) {
-        toast({
-          title: "No Data",
-          description: "No transactions to export",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const exportData = allData.map((tx, index) => ({
-        "S.No": index + 1,
-        "Transaction ID": tx.dth_transaction_id,
-        "Date & Time": formatDate(tx.created_at),
-        "Customer ID": tx.customer_id,
-        Operator: tx.operator_name,
-        "Amount (₹)": tx.amount.toFixed(2),
-        "Before Balance (₹)": tx.before_balance.toFixed(2),
-        "After Balance (₹)": tx.after_balance.toFixed(2),
-        "Commission (₹)": tx.commision.toFixed(2),
-        Status: tx.status,
-      }));
-
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "DTH Recharge Report");
-
-      const colWidths = [
-        { wch: 8 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 12 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 12 },
-        { wch: 12 },
-      ];
-      worksheet["!cols"] = colWidths;
-
-      const fileName = `DTH_Recharge_Report_${
-        new Date().toISOString().split("T")[0]
-      }.xlsx`;
-      XLSX.writeFile(workbook, fileName);
-
+    if (filteredData.length === 0) {
       toast({
-        title: "Success",
-        description: `Exported ${allData.length} transactions to Excel`,
-      });
-    } catch (error) {
-      console.error("Export error:", error);
-      toast({
-        title: "Export Failed",
-        description: "Unable to export transactions",
+        title: "No Data",
+        description: "No matching transactions to export",
         variant: "destructive",
       });
-    } finally {
-      setIsExporting(false);
+      return;
     }
-  };
+
+    /* ---------------- SORT (MATCH TABLE) ---------------- */
+    filteredData.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() -
+        new Date(a.created_at).getTime()
+    );
+
+    /* ---------------- EXCEL DATA ---------------- */
+    const exportData = filteredData.map((tx, index) => ({
+      "S.No": index + 1,
+      "Transaction ID": tx.dth_transaction_id,
+      "Date & Time": formatDate(tx.created_at),
+      "Customer ID": tx.customer_id,
+      Operator: tx.operator_name,
+      "Amount (₹)": tx.amount.toFixed(2),
+      "Before Balance (₹)": tx.before_balance.toFixed(2),
+      "After Balance (₹)": tx.after_balance.toFixed(2),
+      "Commission (₹)": tx.commision.toFixed(2),
+      Status: tx.status,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "DTH Recharge Report");
+
+    worksheet["!cols"] = [
+      { wch: 8 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 15 },
+      { wch: 20 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 14 },
+    ];
+
+    XLSX.writeFile(
+      workbook,
+      `DTH_Recharge_Report_${new Date().toISOString().split("T")[0]}.xlsx`
+    );
+
+    toast({
+      title: "Success",
+      description: `Exported ${filteredData.length} transactions`,
+    });
+  } catch (error) {
+    console.error("Export error:", error);
+    toast({
+      title: "Export Failed",
+      description: "Unable to export transactions",
+      variant: "destructive",
+    });
+  } finally {
+    setIsExporting(false);
+  }
+};
+
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "-";
@@ -515,13 +585,22 @@ export default function DTHRechargeReport() {
     }
   };
 
-  const formatAmount = (amount: number | string) => {
-    const num = typeof amount === "string" ? parseFloat(amount) : amount;
-    return num.toLocaleString("en-IN", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
+const formatAmount = (amount: number | string | null | undefined) => {
+  const num =
+    typeof amount === "number"
+      ? amount
+      : typeof amount === "string"
+      ? parseFloat(amount)
+      : 0;
+
+  if (isNaN(num)) return "0.00";
+
+  return num.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
 
   const getStatusColor = (status: string) => {
     switch (status.toUpperCase()) {
