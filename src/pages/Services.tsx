@@ -64,10 +64,10 @@ export default function Services() {
       description: "Pay electricity, water, gas bills",
       color: "bg-gradient-to-r from-emerald-600 to-emerald-400",
       category: "Bills",
-      route: "/utility-payments",
+      route: "/bbps"
     },
 
-    {
+    {   
       id: "mobile-recharge",
       title: "RECHARGE",
       subtitle: "Mobile & DTH Recharge",

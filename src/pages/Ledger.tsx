@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import DTHLedger from "./DTHLedger";
 import MobileRechargeLedger from "./MobileRechargeLedger";
 import SettlementLedger from "./SettlementLedger";
+import PostpaidMobileRechargeLedger from "./PostPaidMobileRechargeLedger";
 
 interface TokenData {
   user_id: string;
@@ -106,10 +107,11 @@ export default function UserLedger() {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full max-w-lg grid-cols-3">
+            <TabsList className="grid w-full max-w-lg grid-cols-4">
               <TabsTrigger value="dth">DTH Recharge</TabsTrigger>
               <TabsTrigger value="mobile">Mobile Recharge</TabsTrigger>
               <TabsTrigger value="settlement">Settlement</TabsTrigger>
+              <TabsTrigger value="postpaid">Postpaid Recharge</TabsTrigger>
             </TabsList>
 
             <TabsContent value="dth">
@@ -123,6 +125,11 @@ export default function UserLedger() {
             <TabsContent value="settlement">
               <SettlementLedger userId={tokenData.user_id} />
             </TabsContent>
+            
+            <TabsContent value="postpaid">
+              <PostpaidMobileRechargeLedger userId={tokenData.user_id} />
+            </TabsContent>
+
           </Tabs>
         </main>
       </div>
