@@ -36,7 +36,7 @@ export default function BBPSReports() {
       description: "View electricity recharge transaction history and reports",
       color: "bg-gradient-to-r from-purple-600 to-purple-400",
       category: "electricity",
-      route: "/service/dthrecharge/report",
+      route: "/service/electricity/recharge/report",
     },
   ];
 

@@ -66,17 +66,23 @@ interface BillDetails {
 }
 
 interface PaymentHistory {
-  electricity_transaction_id: number;
+  electricity_bill_transaction_id: number;
+  operator_transaction_id: string | null;
+  order_id: string | null;
+  partner_request_id: string;
   retailer_id: string;
+  retailer_name: string;
+  retailer_business_name: string;
   customer_id: string;
   customer_email: string;
   operator_name: string;
-  operator_code: string;
+  operator_id: number;
   amount: number;
-  partner_request_id: string;
-  status: string;
+  commision: number;
+  before_balance: number;
+  after_balance: number;
+  transaction_status: string;
   created_at: string;
-  commission: number;
 }
 
 const ElectricityBillPayment = () => {
@@ -179,10 +185,11 @@ const ElectricityBillPayment = () => {
     setIsLoadingHistory(true);
     
     try {
-      const url = `${API_BASE_URL}/bbps/get/electricity/${retailerId}`;
+      const url = `${API_BASE_URL}/bbps/get/electricity/transactions/${retailerId}`;
       const response = await axios.get(url, getAuthHeaders());
       
-      const historyData = response.data?.data?.payments || [];
+      // Backend returns: { status: "success", message: "transactions fetched successfully", data: { transactions: [...] } }
+      const historyData = response.data?.data?.transactions || [];
       
       if (!Array.isArray(historyData)) {
         throw new Error("Invalid response format");
@@ -475,30 +482,31 @@ const ElectricityBillPayment = () => {
 
   // Get status badge color
   const getStatusBadge = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "success":
-        return (
-          <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/20">
-            <CheckCircle2 className="w-3 h-3 mr-1" />
-            Success
-          </Badge>
-        );
-      case "pending":
-        return (
-          <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20">
-            <RefreshCw className="w-3 h-3 mr-1" />
-            Pending
-          </Badge>
-        );
-      case "failed":
-        return (
-          <Badge className="bg-red-500/10 text-red-600 hover:bg-red-500/20">
-            <AlertCircle className="w-3 h-3 mr-1" />
-            Failed
-          </Badge>
-        );
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+    const normalizedStatus = status.toLowerCase();
+    
+    if (normalizedStatus === "success" || normalizedStatus === "completed") {
+      return (
+        <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/20">
+          <CheckCircle2 className="w-3 h-3 mr-1" />
+          Success
+        </Badge>
+      );
+    } else if (normalizedStatus === "pending" || normalizedStatus === "processing") {
+      return (
+        <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20">
+          <RefreshCw className="w-3 h-3 mr-1" />
+          Pending
+        </Badge>
+      );
+    } else if (normalizedStatus === "failed" || normalizedStatus === "failure") {
+      return (
+        <Badge className="bg-red-500/10 text-red-600 hover:bg-red-500/20">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          Failed
+        </Badge>
+      );
+    } else {
+      return <Badge variant="outline">{status}</Badge>;
     }
   };
 
@@ -808,7 +816,7 @@ const ElectricityBillPayment = () => {
                   <div className="space-y-3">
                     {Array.isArray(paymentHistory) && paymentHistory.slice(0, 10).map((history) => (
                       <div
-                        key={history.electricity_transaction_id}
+                        key={history.electricity_bill_transaction_id}
                         className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
                       >
                         <div className="flex items-start justify-between">
@@ -817,7 +825,7 @@ const ElectricityBillPayment = () => {
                               <p className="font-semibold text-base">
                                 {history.customer_id}
                               </p>
-                              {getStatusBadge(history.status)}
+                              {getStatusBadge(history.transaction_status)}
                             </div>
                             <p className="text-sm text-muted-foreground">
                               {history.operator_name}
@@ -825,17 +833,27 @@ const ElectricityBillPayment = () => {
                             <p className="text-xs text-muted-foreground">
                               {history.customer_email}
                             </p>
+                            {history.order_id && (
+                              <p className="text-xs text-muted-foreground font-mono">
+                                Order ID: {history.order_id}
+                              </p>
+                            )}
                             <p className="text-xs text-muted-foreground">
                               {new Date(history.created_at).toLocaleString()}
                             </p>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right space-y-1">
                             <p className="font-bold text-lg text-primary">
                               ₹{history.amount.toFixed(2)}
                             </p>
-                            {history.commission > 0 && (
+                            {history.commision > 0 && (
                               <p className="text-xs text-green-600">
-                                Commission: ₹{history.commission.toFixed(2)}
+                                Commission: ₹{history.commision.toFixed(2)}
+                              </p>
+                            )}
+                            {history.before_balance > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                Balance: ₹{history.after_balance.toFixed(2)}
                               </p>
                             )}
                           </div>

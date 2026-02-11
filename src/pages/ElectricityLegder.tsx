@@ -1,0 +1,759 @@
+import { useState, useEffect, useCallback } from "react";
+import axios from "axios";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { RefreshCw, FileSpreadsheet, Filter, Calendar, AlertCircle, X } from "lucide-react";
+import * as XLSX from "xlsx";
+
+interface ElectricityBillTransaction {
+  electricity_bill_transaction_id: number;
+  operator_transaction_id: string | null;
+  order_id: string | null;
+  partner_request_id: string;
+  retailer_id: string;
+  retailer_name: string;
+  retailer_business_name: string;
+  customer_id: string;
+  customer_email: string;
+  operator_name: string;
+  operator_id: number;
+  amount: number;
+  commision: number;
+  before_balance: number;
+  after_balance: number;
+  transaction_status: string;
+  created_at: string;
+}
+
+interface ElectricityBillLedgerProps {
+  userId: string;
+}
+
+export default function ElectricityBillLedger({ userId }: ElectricityBillLedgerProps) {
+  const { toast } = useToast();
+  
+  /* -------------------- HELPER: Get Today's Date -------------------- */
+  const getTodayDate = () => new Date().toISOString().split("T")[0];
+  
+  const [allTransactions, setAllTransactions] = useState<ElectricityBillTransaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<ElectricityBillTransaction[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [entriesPerPage, setEntriesPerPage] = useState(10);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [startDate, setStartDate] = useState(getTodayDate());
+  const [endDate, setEndDate] = useState(getTodayDate());
+  const [dateError, setDateError] = useState<string>("");
+
+  /* -------------------- CLIENT-SIDE FILTERING -------------------- */
+
+  const applyFilters = useCallback((transactions: ElectricityBillTransaction[]) => {
+    let filtered = [...transactions];
+
+    // 1. Date filtering (already done by backend, but keep for safety)
+    if (startDate || endDate) {
+      filtered = filtered.filter((tx) => {
+        const txDate = new Date(tx.created_at);
+        const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+        const end = endDate ? new Date(`${endDate}T23:59:59`) : null;
+        
+        if (start && txDate < start) return false;
+        if (end && txDate > end) return false;
+        
+        return true;
+      });
+    }
+
+    // 2. Status filtering (FRONTEND ONLY)
+    if (statusFilter !== "ALL") {
+      filtered = filtered.filter((tx) => 
+        (tx.transaction_status ?? "").toUpperCase() === statusFilter.toUpperCase()
+      );
+    }
+
+    // 3. Search filtering (FRONTEND ONLY)
+    if (searchTerm.trim()) {
+      const search = searchTerm.trim().toLowerCase();
+      filtered = filtered.filter((tx) => {
+        return (
+          String(tx.electricity_bill_transaction_id ?? "").includes(search) ||
+          (tx.customer_id ?? "").toLowerCase().includes(search) ||
+          (tx.customer_email ?? "").toLowerCase().includes(search) ||
+          (tx.operator_name ?? "").toLowerCase().includes(search) ||
+          (tx.retailer_name ?? "").toLowerCase().includes(search) ||
+          (tx.retailer_business_name ?? "").toLowerCase().includes(search) ||
+          (tx.partner_request_id ?? "").toLowerCase().includes(search)
+        );
+      });
+    }
+
+    return filtered;
+  }, [startDate, endDate, statusFilter, searchTerm]);
+
+  /* -------------------- DATE VALIDATION -------------------- */
+
+  const validateDates = useCallback((): boolean => {
+    setDateError("");
+
+    // If no dates are selected, validation passes
+    if (!startDate && !endDate) {
+      return true;
+    }
+
+    const today = new Date(getTodayDate());
+    today.setHours(0, 0, 0, 0);
+
+    // Validate start date
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+
+      if (start > today) {
+        setDateError("Start date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "Start date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate end date
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(0, 0, 0, 0);
+
+      if (end > today) {
+        setDateError("End date cannot be in the future");
+        toast({
+          title: "Invalid Date",
+          description: "End date cannot be in the future.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    // Validate date range
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      if (start > end) {
+        setDateError("Start date cannot be after end date");
+        toast({
+          title: "Invalid Date Range",
+          description: "Start date cannot be after end date.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      // Optional: Check if date range is too large (e.g., more than 1 year)
+      const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysDifference > 365) {
+        setDateError("Date range cannot exceed 1 year");
+        toast({
+          title: "Invalid Date Range",
+          description: "Please select a date range within 1 year.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
+    return true;
+  }, [startDate, endDate, toast]);
+
+  /* -------------------- HANDLE DATE CHANGES -------------------- */
+
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    setDateError("");
+    
+    // If end date exists and new start date is after it, clear end date
+    if (value && endDate) {
+      const start = new Date(value);
+      const end = new Date(endDate);
+      if (start > end) {
+        setEndDate("");
+      }
+    }
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    setDateError("");
+    
+    // If start date exists and new end date is before it, clear start date
+    if (value && startDate) {
+      const start = new Date(startDate);
+      const end = new Date(value);
+      if (end < start) {
+        setStartDate("");
+      }
+    }
+  };
+
+  // Build query params helper - only add params that have values (NO SEARCH, NO STATUS)
+  const buildQueryParams = useCallback((params: {
+    limit?: number;
+    offset?: number;
+    start_date?: string;
+    end_date?: string;
+  }) => {
+    const queryParams = new URLSearchParams();
+    
+    // Always add limit and offset
+    if (params.limit !== undefined) {
+      queryParams.append("limit", params.limit.toString());
+    }
+    if (params.offset !== undefined) {
+      queryParams.append("offset", params.offset.toString());
+    }
+    
+    // Add date params with timestamps for proper filtering
+    if (params.start_date && params.start_date.trim()) {
+      queryParams.append("start_date", `${params.start_date.trim()}T00:00:00`);
+    }
+    if (params.end_date && params.end_date.trim()) {
+      queryParams.append("end_date", `${params.end_date.trim()}T23:59:59`);
+    }
+    
+    return queryParams.toString();
+  }, []);
+
+  // Fetch transactions (NO SEARCH, NO STATUS)
+  const fetchTransactions = useCallback(async () => {
+    if (!userId) return;
+    
+    if (!validateDates()) return;
+    
+    const token = localStorage.getItem("authToken");
+    setLoading(true);
+
+    try {
+      // Build query params - REMOVE search and status
+      const queryString = buildQueryParams({
+        limit: 10000, // Fetch large number to get all data
+        offset: 0,
+        start_date: startDate,
+        end_date: endDate,
+      });
+
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_BASE_URL}/bbps/get/electricity/transactions/${userId}?${queryString}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.data?.status === "success" && Array.isArray(response.data.data?.transactions)) {
+        const raw: ElectricityBillTransaction[] = response.data.data.transactions || [];
+        
+        const sorted = raw.sort(
+          (a: ElectricityBillTransaction, b: ElectricityBillTransaction) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        
+        setAllTransactions(sorted); // Store all data
+      } else {
+        setAllTransactions([]);
+      }
+    } catch (error: any) {
+      setAllTransactions([]);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to fetch electricity bill transactions",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, startDate, endDate, validateDates, buildQueryParams, toast]);
+
+  // Apply filters whenever allTransactions, searchTerm, or statusFilter changes
+  useEffect(() => {
+    const filtered = applyFilters(allTransactions);
+    setFilteredTransactions(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [allTransactions, applyFilters]);
+
+  // Fetch only when dates change (not search or status)
+  useEffect(() => {
+    if (userId) {
+      fetchTransactions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, startDate, endDate]);
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "-";
+    try {
+      return new Date(dateString).toLocaleString("en-IN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const formatAmount = (amount: number) =>
+    amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const getStatusColor = (status?: string) => {
+    switch ((status ?? "").toUpperCase()) {
+      case "SUCCESS":
+      case "COMPLETED":
+        return "bg-green-600 text-white";
+      case "FAILED":
+      case "FAILURE":
+        return "bg-red-600 text-white";
+      case "PENDING":
+      case "PROCESSING":
+        return "bg-yellow-600 text-white";
+      default:
+        return "bg-gray-600 text-white";
+    }
+  };
+
+  // Export to Excel - use filtered data
+  const exportToExcel = async () => {
+    if (filteredTransactions.length === 0) {
+      toast({ 
+        title: "No Data", 
+        description: "No transactions to export", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    try {
+      const exportData = filteredTransactions.map((tx, i) => ({
+        "S.No": i + 1,
+        "Transaction ID": tx.electricity_bill_transaction_id,
+        "Date & Time": formatDate(tx.created_at),
+        "Retailer ID": tx.retailer_id,
+        "Retailer Name": tx.retailer_name,
+        "Business Name": tx.retailer_business_name,
+        "Customer ID": tx.customer_id,
+        "Customer Email": tx.customer_email,
+        "Operator": tx.operator_name,
+        "Before Balance (₹)": tx.before_balance.toFixed(2),
+        "Amount (₹)": tx.amount.toFixed(2),
+        "After Balance (₹)": tx.after_balance.toFixed(2),
+        "Commission (₹)": (tx.commision || 0).toFixed(2),
+        "Order ID": tx.order_id || "-",
+        Status: tx.transaction_status,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Electricity Bills");
+      
+      // Set column widths
+      worksheet["!cols"] = [
+        { wch: 8 },  // S.No
+        { wch: 18 }, // Transaction ID
+        { wch: 20 }, // Date & Time
+        { wch: 15 }, // Retailer ID
+        { wch: 20 }, // Retailer Name
+        { wch: 25 }, // Business Name
+        { wch: 15 }, // Customer ID
+        { wch: 25 }, // Customer Email
+        { wch: 20 }, // Operator
+        { wch: 15 }, // Before Balance
+        { wch: 15 }, // Amount
+        { wch: 15 }, // After Balance
+        { wch: 12 }, // Commission
+        { wch: 20 }, // Order ID
+        { wch: 12 }, // Status
+      ];
+      
+      XLSX.writeFile(workbook, `Electricity_Bills_${new Date().toISOString().split("T")[0]}.xlsx`);
+      
+      toast({ 
+        title: "Success", 
+        description: `Exported ${exportData.length} transaction${exportData.length > 1 ? 's' : ''}` 
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      toast({
+        title: "Export Failed",
+        description: "Unable to export transactions",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setStatusFilter("ALL");
+    setStartDate(getTodayDate());
+    setEndDate(getTodayDate());
+    setDateError("");
+    setCurrentPage(1);
+  };
+
+  const hasActiveFilters = 
+    searchTerm || 
+    statusFilter !== "ALL" || 
+    startDate !== getTodayDate() || 
+    endDate !== getTodayDate();
+
+  // Pagination with filtered data
+  const totalRecords = filteredTransactions.length;
+  const totalPages = Math.ceil(totalRecords / entriesPerPage);
+  const startIdx = (currentPage - 1) * entriesPerPage;
+  const endIdx = startIdx + entriesPerPage;
+  const paginatedTransactions = filteredTransactions.slice(startIdx, endIdx);
+
+  return (
+    <>
+      {/* Filters */}
+      <div className="bg-white rounded-lg shadow p-6 space-y-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-gray-600" />
+            <h2 className="text-lg font-semibold">Filters</h2>
+          </div>
+          {hasActiveFilters && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={clearFilters} 
+              className="text-red-600 hover:bg-red-50"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Clear All Filters
+            </Button>
+          )}
+        </div>
+
+        {/* Date Error Alert */}
+        {dateError && (
+          <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+            <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+            <p className="text-sm text-red-700 font-medium">{dateError}</p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Search */}
+          <div className="space-y-2">
+            <Label>Search</Label>
+            <Input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search transactions..."
+              className="h-9"
+            />
+            {searchTerm && (
+              <p className="text-xs text-muted-foreground">
+                Searching for: "{searchTerm}"
+              </p>
+            )}
+          </div>
+
+          {/* Status Filter */}
+          <div className="space-y-2">
+            <Label>Transaction Status</Label>
+            <Select
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Statuses</SelectItem>
+                <SelectItem value="SUCCESS">Success</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="FAILED">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+            {statusFilter !== "ALL" && (
+              <p className="text-xs text-muted-foreground">
+                Showing: {statusFilter} transactions
+              </p>
+            )}
+          </div>
+
+          {/* Start Date */}
+          <div className="space-y-2">
+            <Label>Start Date</Label>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => handleStartDateChange(e.target.value)}
+              max={getTodayDate()}
+              className={`h-9 ${dateError && startDate ? "border-red-500" : ""}`}
+            />
+            {startDate && (
+              <p className="text-xs text-muted-foreground">
+                From: {new Date(startDate).toLocaleDateString("en-IN", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </p>
+            )}
+          </div>
+
+          {/* End Date */}
+          <div className="space-y-2">
+            <Label>End Date</Label>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => handleEndDateChange(e.target.value)}
+              min={startDate || undefined}
+              max={getTodayDate()}
+              className={`h-9 ${dateError && endDate ? "border-red-500" : ""}`}
+            />
+            {endDate && (
+              <p className="text-xs text-muted-foreground">
+                To: {new Date(endDate).toLocaleDateString("en-IN", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Active Filter Status */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+        <div className="flex items-start gap-2">
+          <Calendar className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-blue-900">
+              Active Filters Applied
+            </p>
+            <div className="mt-1 flex flex-wrap gap-2 text-xs text-blue-700">
+              <span className="bg-blue-100 px-2 py-1 rounded">
+                Date Range: {new Date(startDate).toLocaleDateString("en-IN", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })} - {new Date(endDate).toLocaleDateString("en-IN", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </span>
+              {statusFilter !== "ALL" && (
+                <span className="bg-green-100 text-green-700 px-2 py-1 rounded">
+                  Status: {statusFilter}
+                </span>
+              )}
+              {searchTerm && (
+                <span className="bg-blue-100 px-2 py-1 rounded">
+                  Search: "{searchTerm}"
+                </span>
+              )}
+              {(startDate !== getTodayDate() || endDate !== getTodayDate()) && (
+                <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded">
+                  Custom date range selected
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="p-4 border-b flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">Show</span>
+            <Select
+              value={entriesPerPage.toString()}
+              onValueChange={(value) => {
+                setEntriesPerPage(Number(value));
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="w-20 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-gray-600">entries</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-sm text-gray-600">
+              Showing {totalRecords > 0 ? startIdx + 1 : 0} to{" "}
+              {endIdx > totalRecords ? totalRecords : endIdx} of {totalRecords} records
+            </div>
+            <Button 
+              onClick={exportToExcel} 
+              disabled={filteredTransactions.length === 0} 
+              variant="outline" 
+              size="sm"
+            >
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Button 
+              onClick={fetchTransactions} 
+              disabled={loading} 
+              variant="outline" 
+              size="sm"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
+                <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
+                <TableHead className="text-center whitespace-nowrap">CUSTOMER ID</TableHead>
+                <TableHead className="text-center whitespace-nowrap">EMAIL</TableHead>
+                <TableHead className="text-center whitespace-nowrap">OPERATOR</TableHead>
+                <TableHead className="text-center whitespace-nowrap">AMOUNT (₹)</TableHead>
+                <TableHead className="text-center whitespace-nowrap">BEFORE BAL (₹)</TableHead>
+                <TableHead className="text-center whitespace-nowrap">AFTER BAL (₹)</TableHead>
+                <TableHead className="text-center whitespace-nowrap">COMMISSION (₹)</TableHead>
+                <TableHead className="text-center whitespace-nowrap">STATUS</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center py-12">
+                    <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-500">Loading transactions...</p>
+                  </TableCell>
+                </TableRow>
+              ) : paginatedTransactions.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center py-12">
+                    <p className="text-gray-500 font-medium">No transactions found</p>
+                    <p className="text-sm text-gray-400">
+                      {hasActiveFilters
+                        ? "Try adjusting your filters"
+                        : "Your electricity bill payment transactions will appear here"}
+                    </p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedTransactions.map((transaction) => (
+                  <TableRow key={transaction.electricity_bill_transaction_id}>
+                    <TableCell className="text-center whitespace-nowrap">
+                      {formatDate(transaction.created_at)}
+                    </TableCell>
+                    <TableCell className="text-center font-mono text-xs">
+                      {transaction.electricity_bill_transaction_id}
+                    </TableCell>
+                    <TableCell className="text-center">{transaction.customer_id}</TableCell>
+                    <TableCell className="text-center text-xs">{transaction.customer_email}</TableCell>
+                    <TableCell className="text-center">{transaction.operator_name}</TableCell>
+                    <TableCell className="text-center">
+                      <span className="text-red-600 font-semibold">
+                        - ₹{formatAmount(transaction.amount)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center font-semibold">
+                      ₹{formatAmount(transaction.before_balance)}
+                    </TableCell>
+                    <TableCell className="text-center font-semibold">
+                      ₹{formatAmount(transaction.after_balance)}
+                    </TableCell>
+                    <TableCell className="text-center font-semibold text-green-600">
+                      ₹{formatAmount(transaction.commision || 0)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(transaction.transaction_status)}`}>
+                        {transaction.transaction_status}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Pagination */}
+        {totalRecords > 0 && totalPages > 1 && (
+          <div className="p-4 border-t flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              Page {currentPage} of {totalPages} ({totalRecords} total records)
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+
+              <div className="flex gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={currentPage === pageNum ? "paybazaar-gradient text-white" : ""}
+                    >
+                      {pageNum}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

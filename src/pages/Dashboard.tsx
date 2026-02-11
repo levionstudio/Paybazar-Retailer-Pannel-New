@@ -74,6 +74,44 @@ interface DTHTransaction {
   created_at: string;
 }
 
+interface PostpaidTransaction {
+  postpaid_recharge_transaction_id: number;
+  retailer_id: string;
+  retailer_name: string;
+  retailer_business_name: string;
+  partner_request_id: string;
+  operator_transaction_id: string;
+  order_id: string;
+  mobile_number: string;
+  operator_code: string;
+  amount: number;
+  before_balance: number;
+  after_balance: number;
+  circle_code: string;
+  circle_name: string;
+  operator_name: string;
+  recharge_type: string;
+  recharge_status: string;
+  commission: number;
+  created_at: string;
+}
+
+interface ElectricityBillTransaction {
+  electricity_bill_transaction_id: number;
+  retailer_id: string;
+  customer_id: string;
+  customer_email: string;
+  operator_name: string;
+  operator_id: number;
+  amount: number;
+  commision: number;
+  before_balance: number;
+  after_balance: number;
+  transaction_status: string;
+  partner_request_id: string;
+  created_at: string;
+}
+
 interface PayoutTransaction {
   payout_transaction_id: string;
   operator_transaction_id: string | null;
@@ -100,6 +138,8 @@ interface PayoutTransaction {
 interface RecentTransactions {
   mobile: MobileRechargeTransaction | null;
   dth: DTHTransaction | null;
+  postpaid: PostpaidTransaction | null;
+  electricity: ElectricityBillTransaction | null;
   payout: PayoutTransaction | null;
 }
 
@@ -123,11 +163,14 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [todayRechargeTotal, setTodayRechargeTotal] = useState(0);
+  const [todayBBPSTotal, setTodayBBPSTotal] = useState(0);
   const [todayPayoutTotal, setTodayPayoutTotal] = useState(0);
   
   const [recentTransactions, setRecentTransactions] = useState<RecentTransactions>({
     mobile: null,
     dth: null,
+    postpaid: null,
+    electricity: null,
     payout: null,
   });
 
@@ -228,6 +271,66 @@ export default function Dashboard() {
 
         setTodayRechargeTotal(mobileTotal + dthTotal);
 
+        /* ---------- POSTPAID MOBILE RECHARGE ---------- */
+        let postpaidTotal = 0;
+        let recentPostpaid = null;
+        
+        try {
+          const postpaidRes = await axios.get(
+            `${import.meta.env.VITE_API_BASE_URL}/bbps/recharge/get/${userInfo.id}`,
+            { headers }
+          );
+
+          // Backend returns: { status: "success", message: "...", data: { history: [...] } }
+          const postpaidTransactions = postpaidRes.data?.data?.history || [];
+          const todayPostpaidTransactions = postpaidTransactions.filter(
+            (tx: PostpaidTransaction) => 
+              isToday(tx.created_at) &&
+              ["SUCCESS", "COMPLETED"].includes(tx.recharge_status?.toUpperCase())
+          );
+
+          postpaidTotal = todayPostpaidTransactions.reduce(
+            (sum: number, tx: PostpaidTransaction) => sum + tx.amount,
+            0
+          );
+
+          recentPostpaid = todayPostpaidTransactions.length > 0
+            ? todayPostpaidTransactions[0]
+            : null;
+        } catch (error) {
+          console.error("Postpaid fetch failed:", error);
+        }
+
+        /* ---------- ELECTRICITY BILL ---------- */
+        let electricityTotal = 0;
+        let recentElectricity = null;
+        
+        try {
+          const electricityRes = await axios.get(
+            `${import.meta.env.VITE_API_BASE_URL}/bbps/get/electricity/transactions/${userInfo.id}`,
+            { headers }
+          );
+
+          const electricityTransactions = electricityRes.data?.data?.transactions || [];
+          // Include all statuses for testing (SUCCESS, PENDING, FAILED)
+          const todayElectricityTransactions = electricityTransactions.filter(
+            (tx: ElectricityBillTransaction) => isToday(tx.created_at)
+          );
+
+          electricityTotal = todayElectricityTransactions.reduce(
+            (sum: number, tx: ElectricityBillTransaction) => sum + tx.amount,
+            0
+          );
+
+          recentElectricity = todayElectricityTransactions.length > 0
+            ? todayElectricityTransactions[0]
+            : null;
+        } catch (error) {
+          console.error("Electricity bill fetch failed:", error);
+        }
+
+        setTodayBBPSTotal(postpaidTotal + electricityTotal);
+
         /* ---------- PAYOUT (MONEY TRANSFER) ---------- */
         const payoutRes = await axios.get(
           `${import.meta.env.VITE_API_BASE_URL}/payout/get/${userInfo.id}`,
@@ -257,15 +360,20 @@ export default function Dashboard() {
         setRecentTransactions({
           mobile: recentMobile,
           dth: recentDTH,
+          postpaid: recentPostpaid,
+          electricity: recentElectricity,
           payout: recentPayout,
         });
       } catch (error) {
         console.error("Dashboard totals fetch failed", error);
         setTodayRechargeTotal(0);
+        setTodayBBPSTotal(0);
         setTodayPayoutTotal(0);
         setRecentTransactions({
           mobile: null,
           dth: null,
+          postpaid: null,
+          electricity: null,
           payout: null,
         });
       }
@@ -311,7 +419,7 @@ export default function Dashboard() {
       icon: Wallet,
       status: "active" as const,
       description: "Utility bill payments",
-      stats: [{ label: "Today", value: "₹0.00" }],
+      stats: [{ label: "Today", value: `₹${todayBBPSTotal.toFixed(2)}` }],
     },
     {
       title: "Ticket Booking",
@@ -356,6 +464,30 @@ export default function Dashboard() {
     });
   }
 
+  if (recentTransactions.postpaid) {
+    recentTransactionRows.push({
+      type: "Postpaid Recharge",
+      amount: recentTransactions.postpaid.amount,
+      details: recentTransactions.postpaid.mobile_number || "-",
+      operator: recentTransactions.postpaid.operator_name || "-",
+      transactionId: String(recentTransactions.postpaid.postpaid_recharge_transaction_id) || "-",
+      status: recentTransactions.postpaid.recharge_status || "SUCCESS",
+      time: new Date(recentTransactions.postpaid.created_at).toLocaleString(),
+    });
+  }
+
+  if (recentTransactions.electricity) {
+    recentTransactionRows.push({
+      type: "Electricity Bill",
+      amount: recentTransactions.electricity.amount,
+      details: recentTransactions.electricity.customer_id || "-",
+      operator: recentTransactions.electricity.operator_name || "-",
+      transactionId: String(recentTransactions.electricity.electricity_bill_transaction_id) || "-",
+      status: recentTransactions.electricity.transaction_status || "SUCCESS",
+      time: new Date(recentTransactions.electricity.created_at).toLocaleString(),
+    });
+  }
+
   if (recentTransactions.payout) {
     recentTransactionRows.push({
       type: "Money Transfer",
@@ -385,7 +517,7 @@ export default function Dashboard() {
             </h1>
             <p className="text-white/90">
               Today's Total Business: ₹
-              {(todayRechargeTotal + todayPayoutTotal).toFixed(2)}
+              {(todayRechargeTotal + todayBBPSTotal + todayPayoutTotal).toFixed(2)}
             </p>
           </div>
 

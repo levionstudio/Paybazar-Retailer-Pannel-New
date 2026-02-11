@@ -5,12 +5,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { Header } from "@/components/layout/Header";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Tv, Smartphone, DollarSign, Phone, Zap, IndianRupee } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import DTHLedger from "./DTHLedger";
 import MobileRechargeLedger from "./MobileRechargeLedger";
 import SettlementLedger from "./SettlementLedger";
 import PostpaidMobileRechargeLedger from "./PostPaidMobileRechargeLedger";
+import ElectricityBillLedger from "./ElectricityLegder";
 
 interface TokenData {
   user_id: string;
@@ -105,31 +106,102 @@ export default function UserLedger() {
             </div>
           </div>
 
-          {/* Tabs */}
+          {/* Tabs with Icons and Animations */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full max-w-lg grid-cols-4">
-              <TabsTrigger value="dth">DTH Recharge</TabsTrigger>
-              <TabsTrigger value="mobile">Mobile Recharge</TabsTrigger>
-              <TabsTrigger value="settlement">Settlement</TabsTrigger>
-              <TabsTrigger value="postpaid">Postpaid Recharge</TabsTrigger>
-            </TabsList>
+            <div className="bg-white rounded-lg shadow-sm p-2">
+              <TabsList className="grid w-full grid-cols-5 h-auto bg-gray-100 rounded-lg p-1 gap-1">
+                   <TabsTrigger 
+                  value="settlement" 
+                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 ease-in-out hover:bg-white/50 rounded-md py-3 px-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <IndianRupee className="h-4 w-4" />
+                    <span className="hidden sm:inline">Settlement</span>
+                    <span className="sm:hidden">Settlement</span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="dth" 
+                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 ease-in-out hover:bg-white/50 rounded-md py-3 px-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <Tv className="h-4 w-4" />
+                    <span className="hidden sm:inline">DTH Recharge</span>
+                    <span className="sm:hidden">DTH</span>
+                  </div>
+                </TabsTrigger>
 
-            <TabsContent value="dth">
+                <TabsTrigger 
+                  value="mobile" 
+                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 ease-in-out hover:bg-white/50 rounded-md py-3 px-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4" />
+                    <span className="hidden sm:inline">Mobile Recharge</span>
+                    <span className="sm:hidden">Mobile</span>
+                  </div>
+                </TabsTrigger>
+
+                <TabsTrigger 
+                  value="postpaid" 
+                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 ease-in-out hover:bg-white/50 rounded-md py-3 px-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4" />
+                    <span className="hidden sm:inline">Postpaid</span>
+                    <span className="sm:hidden">Postpaid</span>
+                  </div>
+                </TabsTrigger>
+
+                <TabsTrigger 
+                  value="electricity" 
+                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200 ease-in-out hover:bg-white/50 rounded-md py-3 px-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-4 w-4" />
+                    <span className="hidden sm:inline">Electricity</span>
+                    <span className="sm:hidden">Electric</span>
+                  </div>
+                </TabsTrigger>
+
+             
+              </TabsList>
+            </div>
+
+            <TabsContent 
+              value="dth" 
+              className="animate-in fade-in-50 duration-300"
+            >
               <DTHLedger userId={tokenData.user_id} />
             </TabsContent>
 
-            <TabsContent value="mobile">
+            <TabsContent 
+              value="mobile" 
+              className="animate-in fade-in-50 duration-300"
+            >
               <MobileRechargeLedger userId={tokenData.user_id} />
             </TabsContent>
 
-            <TabsContent value="settlement">
-              <SettlementLedger userId={tokenData.user_id} />
-            </TabsContent>
-            
-            <TabsContent value="postpaid">
+            <TabsContent 
+              value="postpaid" 
+              className="animate-in fade-in-50 duration-300"
+            >
               <PostpaidMobileRechargeLedger userId={tokenData.user_id} />
             </TabsContent>
 
+            <TabsContent 
+              value="electricity" 
+              className="animate-in fade-in-50 duration-300"
+            >
+              <ElectricityBillLedger userId={tokenData.user_id} />
+            </TabsContent>
+
+            <TabsContent 
+              value="settlement" 
+              className="animate-in fade-in-50 duration-300"
+            >
+              <SettlementLedger userId={tokenData.user_id} />
+            </TabsContent>
           </Tabs>
         </main>
       </div>
