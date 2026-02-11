@@ -21,7 +21,7 @@ const utilityServices = [
     totalBillers: 11,
     category: "Electricity",
     color: "from-slate-500 to-slate-600",
-    route: "/dthrecharge",
+    route: "/electricity",
   },
   {
     id: 2,

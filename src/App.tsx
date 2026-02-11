@@ -40,6 +40,7 @@ import BBPSPayments from "./pages/Bbps";
 import MobileRechargePostpaid from "./pages/MobilePostpaid";
 import PostpaidMobileRechargeReport from "./pages/ServiceReportMobilePostpaid";
 import BBPSReports from "./pages/ReportsofBBPS";
+import ElectricityBillPayment from "./pages/ElectricityBBPS";
 
 const queryClient = new QueryClient();
 
@@ -67,6 +68,7 @@ const App = () => (
               <Route path="/recharge" element={<UtilityPayments />} />
               <Route path="/bbps" element={<BBPSPayments />} />
               <Route path="/mobilerecharge" element={<MobileRecharge />} />
+              <Route path="/electricity" element={<ElectricityBillPayment />} />
 
               <Route path="/service/bbps/all" element={<BBPSReports />} />
               <Route path="/mobilerechargepostpaid" element={<MobileRechargePostpaid />} />
