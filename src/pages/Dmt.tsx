@@ -407,7 +407,7 @@ function toBase64(str: string): string {
       mobile_no: mobileNumber,
       lat: latitude,
       long: longitude,
-      aadhar_number: aadharNumber,
+      aadhaar_number: aadharNumber,
       pid_data: toBase64(pidData),
       is_iris: 2,
     };
