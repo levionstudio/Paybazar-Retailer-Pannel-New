@@ -82,7 +82,7 @@ interface VerifyWalletResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Biometric device types & config
+// Biometric device types & RD Service configuration
 // ---------------------------------------------------------------------------
 type BiometricDevice = "morpho" | "mantra";
 
@@ -97,11 +97,37 @@ const DEVICE_OPTIONS: DeviceOption[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// RD Service XML capture request templates
+// RD Service URLs
+// ---------------------------------------------------------------------------
+// The RD Services expose HTTPS endpoints to avoid CORS issues when called
+// from browser-based apps (https:// origins).
+//
+// Mantra MFS100 RD Service:
+//   - Primary  : https://127.0.0.1:8005/rd/capture
+//   - Fallback : https://127.0.0.1:8004/rd/capture
+//   - Legacy   : http://127.0.0.1:11100/rd/capture  (blocked by CORS on HTTPS sites)
+//
+// Morpho AVDM RD Service:
+//   - Primary  : https://127.0.0.1:11100/capture
+//   - Fallback : http://127.0.0.1:11100/capture
 // ---------------------------------------------------------------------------
 
-/** Morpho AVDM RD Service capture XML */
-const getMorphoCaptureXml = () =>
+const MANTRA_CAPTURE_URLS = [
+  "https://127.0.0.1:8005/rd/capture",
+  "https://127.0.0.1:8004/rd/capture",
+  "http://127.0.0.1:8005/rd/capture",
+  "http://127.0.0.1:11100/rd/capture",
+];
+
+const MORPHO_CAPTURE_URLS = [
+  "https://127.0.0.1:11100/capture",
+  "http://127.0.0.1:11100/capture",
+];
+
+// ---------------------------------------------------------------------------
+// RD Service capture XML
+// ---------------------------------------------------------------------------
+const getCaptureXml = () =>
   `<?xml version="1.0"?>
 <PidOptions ver="1.0">
   <Opts fCount="1" fType="2" iCount="0" pCount="0" format="0"
@@ -112,76 +138,108 @@ const getMorphoCaptureXml = () =>
   </CustOpts>
 </PidOptions>`;
 
-/** Mantra MFS100 RD Service capture XML */
-const getMantraCaptureXml = () =>
-  `<?xml version="1.0"?>
-<PidOptions ver="1.0">
-  <Opts fCount="1" fType="2" iCount="0" pCount="0" format="0"
-        pidVer="2.0" timeout="10000" posh="UNKNOWN"
-        env="P" wadh="" />
-  <CustOpts>
-    <Param name="mantrakey" value="" />
-  </CustOpts>
-</PidOptions>`;
+// ---------------------------------------------------------------------------
+// Device info XML (to check if RD Service is running)
+// ---------------------------------------------------------------------------
+const MANTRA_INFO_URLS = [
+  "https://127.0.0.1:8005/rd/info",
+  "https://127.0.0.1:8004/rd/info",
+  "http://127.0.0.1:8005/rd/info",
+  "http://127.0.0.1:11100/rd/info",
+];
+
+const MORPHO_INFO_URLS = [
+  "https://127.0.0.1:11100/info",
+  "http://127.0.0.1:11100/info",
+];
 
 // ---------------------------------------------------------------------------
-// RD Service communication – captures fingerprint, returns PID XML
+// Try multiple URLs until one works – handles port/protocol discovery
 // ---------------------------------------------------------------------------
-async function captureFingerprint(device: BiometricDevice): Promise<string> {
-  let captureUrl: string;
-  let captureXml: string;
+async function tryFetchUrls(
+  urls: string[],
+  options: RequestInit
+): Promise<{ url: string; response: Response }> {
+  const errors: string[] = [];
 
-  if (device === "morpho") {
-    // Morpho AVDM – default port 11100
-    captureUrl = "http://127.0.0.1:11100/capture";
-    captureXml = getMorphoCaptureXml();
-  } else {
-    // Mantra MFS100 – /rd/capture endpoint
-    captureUrl = "http://127.0.0.1:11100/rd/capture";
-    captureXml = getMantraCaptureXml();
+  for (const url of urls) {
+    try {
+      console.log(`[DMT][Bio] Trying: ${url}`);
+      const response = await fetch(url, {
+        ...options,
+        // Short timeout for discovery – increase for capture
+        signal:
+          options.signal ||
+          AbortSignal.timeout(
+            url.includes("capture") ? 15000 : 5000
+          ),
+      });
+      console.log(`[DMT][Bio] Success: ${url} → ${response.status}`);
+      return { url, response };
+    } catch (err: any) {
+      console.warn(`[DMT][Bio] Failed: ${url} →`, err.message);
+      errors.push(`${url}: ${err.message}`);
+    }
   }
 
-  console.log(`[DMT][Bio] Calling ${device} RD Service →`, captureUrl);
+  throw new Error(
+    `Could not connect to RD Service on any known port.\n\nTried:\n${errors.join("\n")}`
+  );
+}
 
+// ---------------------------------------------------------------------------
+// Capture fingerprint from selected device
+// ---------------------------------------------------------------------------
+async function captureFingerprint(device: BiometricDevice): Promise<string> {
+  const captureUrls =
+    device === "morpho" ? MORPHO_CAPTURE_URLS : MANTRA_CAPTURE_URLS;
+  const captureXml = getCaptureXml();
+
+  console.log(`[DMT][Bio] Capturing from ${device}...`);
+
+  const { url, response } = await tryFetchUrls(captureUrls, {
+    method: "POST",
+    headers: { "Content-Type": "text/xml" },
+    body: captureXml,
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Device at ${url} returned HTTP ${response.status} ${response.statusText}. ` +
+        `Ensure the ${device === "morpho" ? "Morpho" : "Mantra"} RD Service is running.`
+    );
+  }
+
+  const responseXml = await response.text();
+  console.log(`[DMT][Bio] Response from ${url}, length: ${responseXml.length}`);
+
+  // Parse XML to check for capture errors
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(responseXml, "text/xml");
+  const respNode = xmlDoc.querySelector("Resp");
+  const errCode = respNode?.getAttribute("errCode") || "";
+  const errInfo = respNode?.getAttribute("errInfo") || "";
+
+  if (errCode && errCode !== "0") {
+    throw new Error(
+      `Biometric capture failed: ${errInfo || "Unknown error"} (code: ${errCode})`
+    );
+  }
+
+  console.log(`[DMT][Bio] Capture SUCCESS from ${url}`);
+  return responseXml;
+}
+
+// ---------------------------------------------------------------------------
+// Check if RD Service is running (info endpoint)
+// ---------------------------------------------------------------------------
+async function checkDeviceReady(device: BiometricDevice): Promise<boolean> {
+  const infoUrls = device === "morpho" ? MORPHO_INFO_URLS : MANTRA_INFO_URLS;
   try {
-    const response = await fetch(captureUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/xml" },
-      body: captureXml,
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Device returned HTTP ${response.status}. Ensure the ${device} RD Service is running.`
-      );
-    }
-
-    const responseXml = await response.text();
-    console.log(`[DMT][Bio] ${device} response length:`, responseXml.length);
-
-    // Parse response to check for capture errors
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(responseXml, "text/xml");
-    const respNode = xmlDoc.querySelector("Resp");
-    const errCode = respNode?.getAttribute("errCode") || "";
-    const errInfo = respNode?.getAttribute("errInfo") || "";
-
-    if (errCode && errCode !== "0") {
-      throw new Error(
-        `Biometric capture failed: ${errInfo || "Unknown error"} (code: ${errCode})`
-      );
-    }
-
-    console.log(`[DMT][Bio] ${device} capture SUCCESS`);
-    return responseXml; // full encrypted PidData XML
-  } catch (err: any) {
-    if (err.name === "TypeError" && err.message.includes("fetch")) {
-      throw new Error(
-        `Unable to connect to ${device === "morpho" ? "Morpho" : "Mantra"} device. ` +
-          `Please ensure the RD Service is installed and running.`
-      );
-    }
-    throw err;
+    await tryFetchUrls(infoUrls, { method: "RDSERVICE" });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -225,10 +283,10 @@ function requestGeolocation(): Promise<{ lat: number; lng: number }> {
 // Step enum
 // ---------------------------------------------------------------------------
 enum Step {
-  ENTER_MOBILE,      // 1 – user types mobile number
-  AADHAAR_BIOMETRIC, // 2 – Aadhaar + device selection + fingerprint capture
-  OTP_VERIFY,        // 3 – OTP + eKYC verification
-  SUCCESS,           // 4 – confirmation
+  ENTER_MOBILE,
+  AADHAAR_BIOMETRIC,
+  OTP_VERIFY,
+  SUCCESS,
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +299,7 @@ export default function DmtPage() {
   // ---- token state --------------------------------------------------------
   const [retailerId, setRetailerId] = useState("");
 
-  // ---- step state ---------------------------------------------------------
+  // ---- step ---------------------------------------------------------------
   const [step, setStep] = useState<Step>(Step.ENTER_MOBILE);
 
   // ---- form values --------------------------------------------------------
@@ -252,11 +310,15 @@ export default function DmtPage() {
   const [stateResp, setStateResp] = useState("");
 
   // ---- biometric ----------------------------------------------------------
-  const [selectedDevice, setSelectedDevice] = useState<BiometricDevice>("morpho");
+  const [selectedDevice, setSelectedDevice] =
+    useState<BiometricDevice>("mantra");
   const [pidData, setPidData] = useState("");
   const [capturing, setCapturing] = useState(false);
+  const [deviceStatus, setDeviceStatus] = useState<
+    "unknown" | "checking" | "ready" | "not_found"
+  >("unknown");
 
-  // ---- geolocation (captured on page load) --------------------------------
+  // ---- geolocation --------------------------------------------------------
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState<
@@ -265,15 +327,14 @@ export default function DmtPage() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const locationRequested = useRef(false);
 
-  // ---- ui state -----------------------------------------------------------
+  // ---- ui -----------------------------------------------------------------
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // ==================================================================
-  // On mount: extract JWT + request geolocation immediately
+  // On mount: JWT + geolocation
   // ==================================================================
   useEffect(() => {
-    // ── JWT decode ──
     const token = localStorage.getItem("authToken");
     if (!token) {
       toast({
@@ -283,7 +344,6 @@ export default function DmtPage() {
       });
       return;
     }
-
     try {
       const decoded: JwtPayload = jwtDecode(token);
       // @ts-ignore
@@ -298,7 +358,6 @@ export default function DmtPage() {
         return;
       }
       setRetailerId(userId);
-      console.log("[DMT] retailerId:", userId);
     } catch {
       toast({
         title: "Error",
@@ -307,15 +366,12 @@ export default function DmtPage() {
       });
     }
 
-    // ── Request geolocation on page load (with permission prompt) ──
+    // ── Request location on page load ──
     if (!locationRequested.current) {
       locationRequested.current = true;
       setLocationStatus("fetching");
-      console.log("[DMT] Requesting geolocation on page load...");
-
       requestGeolocation()
         .then((coords) => {
-          console.log("[DMT] Location:", coords);
           setLatitude(coords.lat);
           setLongitude(coords.lng);
           setLocationStatus("success");
@@ -325,7 +381,6 @@ export default function DmtPage() {
           });
         })
         .catch((err: Error) => {
-          console.error("[DMT] Location error:", err.message);
           setLocationStatus("error");
           setLocationError(err.message);
           toast({
@@ -336,6 +391,29 @@ export default function DmtPage() {
         });
     }
   }, [toast]);
+
+  // ==================================================================
+  // Check device readiness when device selection changes (step 2)
+  // ==================================================================
+  useEffect(() => {
+    if (step !== Step.AADHAAR_BIOMETRIC) return;
+
+    let cancelled = false;
+    setDeviceStatus("checking");
+    setPidData(""); // reset PID on device change
+
+    checkDeviceReady(selectedDevice).then((ready) => {
+      if (cancelled) return;
+      setDeviceStatus(ready ? "ready" : "not_found");
+      if (!ready) {
+        console.warn(`[DMT] ${selectedDevice} RD Service not detected`);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDevice, step]);
 
   // ---- helpers ------------------------------------------------------------
   const clearError = () => setError(null);
@@ -355,16 +433,11 @@ export default function DmtPage() {
     } catch (err: any) {
       setLocationStatus("error");
       setLocationError(err.message);
-      toast({
-        title: "Location Required",
-        description: err.message,
-        variant: "destructive",
-      });
     }
   }, [toast]);
 
   // ==================================================================
-  // STEP 1 – Check if wallet exists
+  // STEP 1 – Check wallet
   // ==================================================================
   const handleMobileSubmit = useCallback(async () => {
     if (!retailerId) {
@@ -388,18 +461,13 @@ export default function DmtPage() {
     setLoading(true);
 
     try {
-      const checkUrl = `${API_BASE_URL}/dmt/check/wallet`;
-      const checkPayload = { mobile_no: mobileNumber };
-      console.log("[DMT] POST", checkUrl, checkPayload);
-
       const res = await axios.post<CheckWalletResponse>(
-        checkUrl,
-        checkPayload,
+        `${API_BASE_URL}/dmt/check/wallet`,
+        { mobile_no: mobileNumber },
         getAuthHeaders()
       );
 
       const checkRes = res.data?.data?.response;
-      console.log("[DMT] Check response:", checkRes);
 
       if (checkRes?.AccountExists === 1) {
         toast({
@@ -410,7 +478,6 @@ export default function DmtPage() {
         return;
       }
 
-      // Wallet not found → biometric step
       setStep(Step.AADHAAR_BIOMETRIC);
     } catch (err: any) {
       const msg =
@@ -423,10 +490,9 @@ export default function DmtPage() {
   }, [mobileNumber, retailerId, locationStatus, toast, navigate]);
 
   // ==================================================================
-  // STEP 2a – Capture fingerprint from RD device
+  // STEP 2a – Capture fingerprint
   // ==================================================================
   const handleCaptureFingerprint = useCallback(async () => {
-    console.log("[DMT] Capturing fingerprint from:", selectedDevice);
     setCapturing(true);
     clearError();
 
@@ -450,7 +516,7 @@ export default function DmtPage() {
   }, [selectedDevice, toast]);
 
   // ==================================================================
-  // STEP 2b – Create wallet (Aadhaar + PID + location)
+  // STEP 2b – Create wallet
   // ==================================================================
   const handleCreateWallet = useCallback(async () => {
     if (!pidData) {
@@ -466,30 +532,21 @@ export default function DmtPage() {
     setLoading(true);
 
     try {
-      const createUrl = `${API_BASE_URL}/dmt/create/wallet`;
-      const createPayload = {
-        retailer_id: retailerId,
-        mobile_no: mobileNumber,
-        lat: latitude,
-        long: longitude,
-        aadhar_number: aadharNumber,
-        pid_data: pidData,
-        is_iris: 2, // 2 = fingerprint (backend convention)
-      };
-
-      console.log("[DMT] POST", createUrl, {
-        ...createPayload,
-        pid_data: `[${pidData.length} chars]`,
-      });
-
       const res = await axios.post<CreateWalletResponse>(
-        createUrl,
-        createPayload,
+        `${API_BASE_URL}/dmt/create/wallet`,
+        {
+          retailer_id: retailerId,
+          mobile_no: mobileNumber,
+          lat: latitude,
+          long: longitude,
+          aadhar_number: aadharNumber,
+          pid_data: pidData,
+          is_iris: 2, // 2 = fingerprint
+        },
         getAuthHeaders()
       );
 
       const createRes = res.data?.data?.response;
-      console.log("[DMT] Create response:", createRes);
 
       if (createRes?.error !== 0) {
         setError(
@@ -512,36 +569,38 @@ export default function DmtPage() {
     } finally {
       setLoading(false);
     }
-  }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, pidData, toast]);
+  }, [
+    retailerId,
+    mobileNumber,
+    latitude,
+    longitude,
+    aadharNumber,
+    pidData,
+    toast,
+  ]);
 
   // ==================================================================
-  // STEP 3 – Verify wallet (OTP + eKYC)
+  // STEP 3 – Verify wallet
   // ==================================================================
   const handleVerifySubmit = useCallback(async () => {
     clearError();
     setLoading(true);
 
     try {
-      const verifyUrl = `${API_BASE_URL}/dmt/verify/wallet`;
-      const verifyPayload = {
-        retailer_id: retailerId,
-        mobile_no: mobileNumber,
-        otp,
-        ekyc_id: ekycId,
-        stateresp: stateResp,
-        partner_request_id: "",
-      };
-
-      console.log("[DMT] POST", verifyUrl, verifyPayload);
-
       const res = await axios.post<VerifyWalletResponse>(
-        verifyUrl,
-        verifyPayload,
+        `${API_BASE_URL}/dmt/verify/wallet`,
+        {
+          retailer_id: retailerId,
+          mobile_no: mobileNumber,
+          otp,
+          ekyc_id: ekycId,
+          stateresp: stateResp,
+          partner_request_id: "",
+        },
         getAuthHeaders()
       );
 
       const verifyRes = res.data?.data?.response;
-      console.log("[DMT] Verify response:", verifyRes);
 
       if (verifyRes?.error !== 0) {
         setError(
@@ -569,7 +628,10 @@ export default function DmtPage() {
   // ==================================================================
   // Navigation
   // ==================================================================
-  const handleBackToServices = useCallback(() => navigate("/services"), [navigate]);
+  const handleBackToServices = useCallback(
+    () => navigate("/services"),
+    [navigate]
+  );
   const handleGoToBeneficiary = useCallback(
     () => navigate("/dmt/beneficiary", { state: { mobileNumber } }),
     [navigate, mobileNumber]
@@ -624,7 +686,7 @@ export default function DmtPage() {
   );
 
   // ==================================================================
-  // Location status banner – shown at top of every step
+  // Location banner
   // ==================================================================
   const renderLocationBanner = () => {
     if (locationStatus === "fetching") {
@@ -635,7 +697,11 @@ export default function DmtPage() {
         </div>
       );
     }
-    if (locationStatus === "success" && latitude !== null && longitude !== null) {
+    if (
+      locationStatus === "success" &&
+      latitude !== null &&
+      longitude !== null
+    ) {
       return (
         <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2 mb-4">
           <MapPin className="w-4 h-4 shrink-0" />
@@ -716,7 +782,7 @@ export default function DmtPage() {
     );
   };
 
-  // ── STEP 1 UI – Enter mobile ──────────────────────────────────────
+  // ── STEP 1 UI ──────────────────────────────────────────────────────
   const renderEnterMobile = () => (
     <div className="space-y-6">
       <div className="text-center">
@@ -779,7 +845,7 @@ export default function DmtPage() {
     </div>
   );
 
-  // ── STEP 2 UI – Aadhaar + Device dropdown + Fingerprint capture ───
+  // ── STEP 2 UI – Aadhaar + Device + Fingerprint ─────────────────────
   const renderAadhaarBiometric = () => (
     <div className="space-y-5">
       <div className="text-center">
@@ -808,7 +874,7 @@ export default function DmtPage() {
         />
       </div>
 
-      {/* Aadhaar Number */}
+      {/* Aadhaar */}
       <div className="space-y-1">
         <Label htmlFor="aadhar" className="text-sm font-medium text-foreground">
           Aadhaar Number <span className="text-red-500">*</span>
@@ -830,7 +896,7 @@ export default function DmtPage() {
         )}
       </div>
 
-      {/* Device Selection Dropdown */}
+      {/* Device Selection */}
       <div className="space-y-1">
         <Label
           htmlFor="device-select"
@@ -841,10 +907,9 @@ export default function DmtPage() {
         <select
           id="device-select"
           value={selectedDevice}
-          onChange={(e) => {
-            setSelectedDevice(e.target.value as BiometricDevice);
-            setPidData(""); // reset PID when device changes
-          }}
+          onChange={(e) =>
+            setSelectedDevice(e.target.value as BiometricDevice)
+          }
           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           {DEVICE_OPTIONS.map((opt) => (
@@ -853,9 +918,34 @@ export default function DmtPage() {
             </option>
           ))}
         </select>
+
+        {/* Device status indicator */}
+        <div className="mt-1">
+          {deviceStatus === "checking" && (
+            <p className="text-xs text-blue-600 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Detecting{" "}
+              {selectedDevice === "morpho" ? "Morpho" : "Mantra"} RD Service…
+            </p>
+          )}
+          {deviceStatus === "ready" && (
+            <p className="text-xs text-green-600 flex items-center gap-1">
+              <CheckCircle className="w-3 h-3" />{" "}
+              {selectedDevice === "morpho" ? "Morpho" : "Mantra"} RD Service
+              detected
+            </p>
+          )}
+          {deviceStatus === "not_found" && (
+            <p className="text-xs text-amber-600">
+              ⚠️{" "}
+              {selectedDevice === "morpho" ? "Morpho" : "Mantra"} RD Service
+              not detected. Make sure the service is installed and running, then
+              try capturing.
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Capture Fingerprint Button */}
+      {/* Capture Button */}
       <div className="space-y-2">
         <Button
           type="button"
@@ -921,7 +1011,7 @@ export default function DmtPage() {
     </div>
   );
 
-  // ── STEP 3 UI – OTP + eKYC verification ────────────────────────────
+  // ── STEP 3 UI – OTP ───────────────────────────────────────────────
   const renderOtpVerify = () => (
     <div className="space-y-5">
       <div className="text-center">
@@ -935,7 +1025,6 @@ export default function DmtPage() {
         </p>
       </div>
 
-      {/* Mobile – read-only */}
       <div className="space-y-1">
         <Label className="text-sm font-medium text-foreground">
           Mobile Number
@@ -947,7 +1036,6 @@ export default function DmtPage() {
         />
       </div>
 
-      {/* OTP */}
       <div className="space-y-1">
         <Label htmlFor="otp" className="text-sm font-medium text-foreground">
           OTP <span className="text-red-500">*</span>
@@ -964,7 +1052,6 @@ export default function DmtPage() {
         />
       </div>
 
-      {/* eKYC ID */}
       <div className="space-y-1">
         <Label htmlFor="ekycId" className="text-sm font-medium text-foreground">
           eKYC ID <span className="text-red-500">*</span>
@@ -979,7 +1066,6 @@ export default function DmtPage() {
         />
       </div>
 
-      {/* State Response (optional) */}
       <div className="space-y-1">
         <Label
           htmlFor="stateResp"
@@ -1075,7 +1161,6 @@ export default function DmtPage() {
         <Header />
 
         <main className="flex-1 p-6 space-y-6 overflow-auto">
-          {/* Page header */}
           <div className="paybazaar-gradient rounded-lg p-6 text-white">
             <div className="flex items-center space-x-4">
               <Button
@@ -1092,12 +1177,9 @@ export default function DmtPage() {
             </div>
           </div>
 
-          {/* Step indicator + card */}
           <div className="max-w-2xl mx-auto w-full">
             <div className="paybazaar-card p-8">
-              {/* Location banner – always visible */}
               {renderLocationBanner()}
-
               {renderStepIndicator()}
 
               {step === Step.ENTER_MOBILE && renderEnterMobile()}
