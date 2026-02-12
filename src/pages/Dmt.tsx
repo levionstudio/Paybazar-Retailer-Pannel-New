@@ -38,7 +38,6 @@ const getAuthHeaders = () => {
 // Types – aligned with Go backend models
 // ---------------------------------------------------------------------------
 
-/** POST /dmt/check/wallet */
 interface CheckWalletResponse {
   status: string;
   message: string;
@@ -52,7 +51,6 @@ interface CheckWalletResponse {
   };
 }
 
-/** POST /dmt/create/wallet */
 interface CreateWalletResponse {
   status: string;
   message: string;
@@ -66,7 +64,6 @@ interface CreateWalletResponse {
   };
 }
 
-/** POST /dmt/verify/wallet */
 interface VerifyWalletResponse {
   status: string;
   message: string;
@@ -82,169 +79,200 @@ interface VerifyWalletResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Biometric device types & RD Service configuration
+// Biometric device config
 // ---------------------------------------------------------------------------
 type BiometricDevice = "morpho" | "mantra";
 
-interface DeviceOption {
-  value: BiometricDevice;
-  label: string;
-}
-
-const DEVICE_OPTIONS: DeviceOption[] = [
+const DEVICE_OPTIONS: { value: BiometricDevice; label: string }[] = [
   { value: "morpho", label: "Morpho (MSO 1300 E2 / E3)" },
   { value: "mantra", label: "Mantra (MFS100)" },
 ];
 
 // ---------------------------------------------------------------------------
-// RD Service URLs
+// RD Service URLs to try (in priority order)
 // ---------------------------------------------------------------------------
-// The RD Services expose HTTPS endpoints to avoid CORS issues when called
-// from browser-based apps (https:// origins).
-//
-// Mantra MFS100 RD Service:
-//   - Primary  : https://127.0.0.1:8005/rd/capture
-//   - Fallback : https://127.0.0.1:8004/rd/capture
-//   - Legacy   : http://127.0.0.1:11100/rd/capture  (blocked by CORS on HTTPS sites)
-//
-// Morpho AVDM RD Service:
-//   - Primary  : https://127.0.0.1:11100/capture
-//   - Fallback : http://127.0.0.1:11100/capture
-// ---------------------------------------------------------------------------
-
-const MANTRA_CAPTURE_URLS = [
-  "https://127.0.0.1:8005/rd/capture",
-  "https://127.0.0.1:8004/rd/capture",
-  "http://127.0.0.1:8005/rd/capture",
-  "http://127.0.0.1:11100/rd/capture",
+const MANTRA_URLS = [
+  "https://127.0.0.1:8005/rd",
+  "https://127.0.0.1:8004/rd",
+  "http://127.0.0.1:8005/rd",
+  "http://127.0.0.1:11100/rd",
 ];
 
-const MORPHO_CAPTURE_URLS = [
-  "https://127.0.0.1:11100/capture",
-  "http://127.0.0.1:11100/capture",
+const MORPHO_URLS = [
+  "https://127.0.0.1:11100",
+  "http://127.0.0.1:11100",
 ];
 
 // ---------------------------------------------------------------------------
-// RD Service capture XML
+// Capture PidOptions XML
 // ---------------------------------------------------------------------------
-const getCaptureXml = () =>
-  `<?xml version="1.0"?>
-<PidOptions ver="1.0">
-  <Opts fCount="1" fType="2" iCount="0" pCount="0" format="0"
-        pidVer="2.0" timeout="10000" posh="UNKNOWN"
-        env="P" wadh="" />
-  <CustOpts>
-    <Param name="mantrakey" value="" />
-  </CustOpts>
-</PidOptions>`;
+const CAPTURE_PID_OPTIONS =
+  `<?xml version="1.0"?>` +
+  `<PidOptions ver="1.0">` +
+  `<Opts fCount="1" fType="2" iCount="0" pCount="0" format="0" ` +
+  `pidVer="2.0" timeout="10000" posh="UNKNOWN" env="P" wadh="" />` +
+  `<CustOpts><Param name="mantrakey" value="" /></CustOpts>` +
+  `</PidOptions>`;
 
 // ---------------------------------------------------------------------------
-// Device info XML (to check if RD Service is running)
+// XMLHttpRequest-based POST helper
 // ---------------------------------------------------------------------------
-const MANTRA_INFO_URLS = [
-  "https://127.0.0.1:8005/rd/info",
-  "https://127.0.0.1:8004/rd/info",
-  "http://127.0.0.1:8005/rd/info",
-  "http://127.0.0.1:11100/rd/info",
-];
+// We use XMLHttpRequest instead of fetch() because many RD Services
+// (especially Mantra on port 11100) handle XHR CORS differently from fetch.
+// This is the standard approach used by UIDAI-integrated fintech apps.
+// ---------------------------------------------------------------------------
+function xhrPost(url: string, body: string, timeoutMs = 15000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    xhr.setRequestHeader("Content-Type", "text/xml");
+    xhr.timeout = timeoutMs;
 
-const MORPHO_INFO_URLS = [
-  "https://127.0.0.1:11100/info",
-  "http://127.0.0.1:11100/info",
-];
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 4) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.responseText);
+        } else if (xhr.status === 0) {
+          // Network error / CORS blocked / connection refused
+          reject(new Error(`Connection failed to ${url}`));
+        } else {
+          reject(
+            new Error(`HTTP ${xhr.status} ${xhr.statusText} from ${url}`)
+          );
+        }
+      }
+    };
+
+    xhr.onerror = () => reject(new Error(`Network error connecting to ${url}`));
+    xhr.ontimeout = () => reject(new Error(`Request timed out for ${url}`));
+
+    xhr.send(body);
+  });
+}
+
+function xhrGet(url: string, method = "GET", timeoutMs = 5000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url, true);
+    xhr.timeout = timeoutMs;
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 4) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.responseText);
+        } else if (xhr.status === 0) {
+          reject(new Error(`Connection failed to ${url}`));
+        } else {
+          reject(
+            new Error(`HTTP ${xhr.status} ${xhr.statusText} from ${url}`)
+          );
+        }
+      }
+    };
+
+    xhr.onerror = () => reject(new Error(`Network error connecting to ${url}`));
+    xhr.ontimeout = () => reject(new Error(`Request timed out for ${url}`));
+
+    xhr.send();
+  });
+}
 
 // ---------------------------------------------------------------------------
-// Try multiple URLs until one works – handles port/protocol discovery
+// Discover which RD Service base URL is responding
 // ---------------------------------------------------------------------------
-async function tryFetchUrls(
-  urls: string[],
-  options: RequestInit
-): Promise<{ url: string; response: Response }> {
+async function discoverRdServiceUrl(
+  device: BiometricDevice
+): Promise<string | null> {
+  const baseUrls = device === "morpho" ? MORPHO_URLS : MANTRA_URLS;
+
+  for (const baseUrl of baseUrls) {
+    const infoUrl = `${baseUrl}/info`;
+    try {
+      console.log(`[DMT][Bio] Checking: ${infoUrl}`);
+      // Mantra uses RDSERVICE method, but some respond to GET too
+      // Try RDSERVICE first, fall back to GET
+      try {
+        await xhrGet(infoUrl, "RDSERVICE", 3000);
+        console.log(`[DMT][Bio] ✓ Discovered RD Service at: ${baseUrl}`);
+        return baseUrl;
+      } catch {
+        await xhrGet(infoUrl, "GET", 3000);
+        console.log(`[DMT][Bio] ✓ Discovered RD Service at: ${baseUrl} (GET)`);
+        return baseUrl;
+      }
+    } catch (err: any) {
+      console.warn(`[DMT][Bio] ✗ ${infoUrl}: ${err.message}`);
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Capture fingerprint using discovered URL
+// ---------------------------------------------------------------------------
+async function captureFingerprint(
+  device: BiometricDevice,
+  discoveredBaseUrl: string | null
+): Promise<string> {
+  // Build list of capture URLs to try
+  let captureUrls: string[];
+
+  if (discoveredBaseUrl) {
+    // Use the discovered URL first, then fall back to others
+    const allBaseUrls = device === "morpho" ? MORPHO_URLS : MANTRA_URLS;
+    const others = allBaseUrls.filter((u) => u !== discoveredBaseUrl);
+    captureUrls = [discoveredBaseUrl, ...others].map((base) =>
+      `${base}/capture`
+    );
+  } else {
+    captureUrls = (device === "morpho" ? MORPHO_URLS : MANTRA_URLS).map(
+      (base) => `${base}/capture`
+    );
+  }
+
   const errors: string[] = [];
 
-  for (const url of urls) {
+  for (const url of captureUrls) {
     try {
-      console.log(`[DMT][Bio] Trying: ${url}`);
-      const response = await fetch(url, {
-        ...options,
-        // Short timeout for discovery – increase for capture
-        signal:
-          options.signal ||
-          AbortSignal.timeout(
-            url.includes("capture") ? 15000 : 5000
-          ),
-      });
-      console.log(`[DMT][Bio] Success: ${url} → ${response.status}`);
-      return { url, response };
+      console.log(`[DMT][Bio] Capture attempt: ${url}`);
+      const responseXml = await xhrPost(url, CAPTURE_PID_OPTIONS, 15000);
+      console.log(`[DMT][Bio] Capture response from ${url}, length: ${responseXml.length}`);
+
+      // Parse response
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(responseXml, "text/xml");
+      const respNode = xmlDoc.querySelector("Resp");
+      const errCode = respNode?.getAttribute("errCode") || "";
+      const errInfo = respNode?.getAttribute("errInfo") || "";
+
+      if (errCode && errCode !== "0") {
+        throw new Error(
+          `Capture error: ${errInfo || "Unknown"} (code: ${errCode})`
+        );
+      }
+
+      console.log(`[DMT][Bio] ✓ Capture SUCCESS from ${url}`);
+      return responseXml;
     } catch (err: any) {
-      console.warn(`[DMT][Bio] Failed: ${url} →`, err.message);
+      console.warn(`[DMT][Bio] ✗ Capture failed at ${url}: ${err.message}`);
       errors.push(`${url}: ${err.message}`);
     }
   }
 
+  const deviceName = device === "morpho" ? "Morpho" : "Mantra";
   throw new Error(
-    `Could not connect to RD Service on any known port.\n\nTried:\n${errors.join("\n")}`
+    `Unable to capture fingerprint from ${deviceName} device.\n\n` +
+      `Please ensure:\n` +
+      `• The ${deviceName} RD Service is installed and running\n` +
+      `• The biometric device is connected via USB\n` +
+      `• No other application is using the device\n\n` +
+      `Tried: ${captureUrls.join(", ")}`
   );
 }
 
 // ---------------------------------------------------------------------------
-// Capture fingerprint from selected device
-// ---------------------------------------------------------------------------
-async function captureFingerprint(device: BiometricDevice): Promise<string> {
-  const captureUrls =
-    device === "morpho" ? MORPHO_CAPTURE_URLS : MANTRA_CAPTURE_URLS;
-  const captureXml = getCaptureXml();
-
-  console.log(`[DMT][Bio] Capturing from ${device}...`);
-
-  const { url, response } = await tryFetchUrls(captureUrls, {
-    method: "POST",
-    headers: { "Content-Type": "text/xml" },
-    body: captureXml,
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Device at ${url} returned HTTP ${response.status} ${response.statusText}. ` +
-        `Ensure the ${device === "morpho" ? "Morpho" : "Mantra"} RD Service is running.`
-    );
-  }
-
-  const responseXml = await response.text();
-  console.log(`[DMT][Bio] Response from ${url}, length: ${responseXml.length}`);
-
-  // Parse XML to check for capture errors
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(responseXml, "text/xml");
-  const respNode = xmlDoc.querySelector("Resp");
-  const errCode = respNode?.getAttribute("errCode") || "";
-  const errInfo = respNode?.getAttribute("errInfo") || "";
-
-  if (errCode && errCode !== "0") {
-    throw new Error(
-      `Biometric capture failed: ${errInfo || "Unknown error"} (code: ${errCode})`
-    );
-  }
-
-  console.log(`[DMT][Bio] Capture SUCCESS from ${url}`);
-  return responseXml;
-}
-
-// ---------------------------------------------------------------------------
-// Check if RD Service is running (info endpoint)
-// ---------------------------------------------------------------------------
-async function checkDeviceReady(device: BiometricDevice): Promise<boolean> {
-  const infoUrls = device === "morpho" ? MORPHO_INFO_URLS : MANTRA_INFO_URLS;
-  try {
-    await tryFetchUrls(infoUrls, { method: "RDSERVICE" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Geolocation helper
+// Geolocation
 // ---------------------------------------------------------------------------
 function requestGeolocation(): Promise<{ lat: number; lng: number }> {
   return new Promise((resolve, reject) => {
@@ -260,18 +288,18 @@ function requestGeolocation(): Promise<{ lat: number; lng: number }> {
           case err.PERMISSION_DENIED:
             reject(
               new Error(
-                "Location permission denied. Please allow location access in browser settings and refresh."
+                "Location permission denied. Please allow location in browser settings and refresh."
               )
             );
             break;
           case err.POSITION_UNAVAILABLE:
-            reject(new Error("Location information is unavailable."));
+            reject(new Error("Location information unavailable."));
             break;
           case err.TIMEOUT:
-            reject(new Error("Location request timed out. Please try again."));
+            reject(new Error("Location request timed out."));
             break;
           default:
-            reject(new Error("Unknown error while fetching location."));
+            reject(new Error("Unknown location error."));
         }
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
@@ -280,7 +308,7 @@ function requestGeolocation(): Promise<{ lat: number; lng: number }> {
 }
 
 // ---------------------------------------------------------------------------
-// Step enum
+// Steps
 // ---------------------------------------------------------------------------
 enum Step {
   ENTER_MOBILE,
@@ -296,20 +324,18 @@ export default function DmtPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // ---- token state --------------------------------------------------------
+  // ---- state --------------------------------------------------------------
   const [retailerId, setRetailerId] = useState("");
-
-  // ---- step ---------------------------------------------------------------
   const [step, setStep] = useState<Step>(Step.ENTER_MOBILE);
 
-  // ---- form values --------------------------------------------------------
+  // form
   const [mobileNumber, setMobileNumber] = useState("");
   const [aadharNumber, setAadharNumber] = useState("");
   const [otp, setOtp] = useState("");
   const [ekycId, setEkycId] = useState("");
   const [stateResp, setStateResp] = useState("");
 
-  // ---- biometric ----------------------------------------------------------
+  // biometric
   const [selectedDevice, setSelectedDevice] =
     useState<BiometricDevice>("mantra");
   const [pidData, setPidData] = useState("");
@@ -317,8 +343,9 @@ export default function DmtPage() {
   const [deviceStatus, setDeviceStatus] = useState<
     "unknown" | "checking" | "ready" | "not_found"
   >("unknown");
+  const discoveredUrl = useRef<string | null>(null);
 
-  // ---- geolocation --------------------------------------------------------
+  // geolocation
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState<
@@ -327,12 +354,12 @@ export default function DmtPage() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const locationRequested = useRef(false);
 
-  // ---- ui -----------------------------------------------------------------
+  // ui
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // ==================================================================
-  // On mount: JWT + geolocation
+  // Mount: JWT + geolocation
   // ==================================================================
   useEffect(() => {
     const token = localStorage.getItem("authToken");
@@ -366,7 +393,6 @@ export default function DmtPage() {
       });
     }
 
-    // ── Request location on page load ──
     if (!locationRequested.current) {
       locationRequested.current = true;
       setLocationStatus("fetching");
@@ -393,21 +419,20 @@ export default function DmtPage() {
   }, [toast]);
 
   // ==================================================================
-  // Check device readiness when device selection changes (step 2)
+  // Detect RD Service when device changes on step 2
   // ==================================================================
   useEffect(() => {
     if (step !== Step.AADHAAR_BIOMETRIC) return;
 
     let cancelled = false;
     setDeviceStatus("checking");
-    setPidData(""); // reset PID on device change
+    setPidData("");
+    discoveredUrl.current = null;
 
-    checkDeviceReady(selectedDevice).then((ready) => {
+    discoverRdServiceUrl(selectedDevice).then((url) => {
       if (cancelled) return;
-      setDeviceStatus(ready ? "ready" : "not_found");
-      if (!ready) {
-        console.warn(`[DMT] ${selectedDevice} RD Service not detected`);
-      }
+      discoveredUrl.current = url;
+      setDeviceStatus(url ? "ready" : "not_found");
     });
 
     return () => {
@@ -466,7 +491,6 @@ export default function DmtPage() {
         { mobile_no: mobileNumber },
         getAuthHeaders()
       );
-
       const checkRes = res.data?.data?.response;
 
       if (checkRes?.AccountExists === 1) {
@@ -497,7 +521,7 @@ export default function DmtPage() {
     clearError();
 
     try {
-      const pid = await captureFingerprint(selectedDevice);
+      const pid = await captureFingerprint(selectedDevice, discoveredUrl.current);
       setPidData(pid);
       toast({
         title: "Fingerprint Captured",
@@ -541,11 +565,10 @@ export default function DmtPage() {
           long: longitude,
           aadhar_number: aadharNumber,
           pid_data: pidData,
-          is_iris: 2, // 2 = fingerprint
+          is_iris: 2,
         },
         getAuthHeaders()
       );
-
       const createRes = res.data?.data?.response;
 
       if (createRes?.error !== 0) {
@@ -569,15 +592,7 @@ export default function DmtPage() {
     } finally {
       setLoading(false);
     }
-  }, [
-    retailerId,
-    mobileNumber,
-    latitude,
-    longitude,
-    aadharNumber,
-    pidData,
-    toast,
-  ]);
+  }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, pidData, toast]);
 
   // ==================================================================
   // STEP 3 – Verify wallet
@@ -599,7 +614,6 @@ export default function DmtPage() {
         },
         getAuthHeaders()
       );
-
       const verifyRes = res.data?.data?.response;
 
       if (verifyRes?.error !== 0) {
@@ -686,7 +700,7 @@ export default function DmtPage() {
   );
 
   // ==================================================================
-  // Location banner
+  // UI: Location banner
   // ==================================================================
   const renderLocationBanner = () => {
     if (locationStatus === "fetching") {
@@ -697,11 +711,7 @@ export default function DmtPage() {
         </div>
       );
     }
-    if (
-      locationStatus === "success" &&
-      latitude !== null &&
-      longitude !== null
-    ) {
+    if (locationStatus === "success" && latitude !== null && longitude !== null) {
       return (
         <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2 mb-4">
           <MapPin className="w-4 h-4 shrink-0" />
@@ -732,7 +742,7 @@ export default function DmtPage() {
   };
 
   // ==================================================================
-  // Step indicator
+  // UI: Step indicator
   // ==================================================================
   const renderStepIndicator = () => {
     const steps = ["Mobile No.", "Biometric", "Verify OTP", "Done"];
@@ -782,7 +792,7 @@ export default function DmtPage() {
     );
   };
 
-  // ── STEP 1 UI ──────────────────────────────────────────────────────
+  // ── STEP 1 ─────────────────────────────────────────────────────────
   const renderEnterMobile = () => (
     <div className="space-y-6">
       <div className="text-center">
@@ -845,7 +855,7 @@ export default function DmtPage() {
     </div>
   );
 
-  // ── STEP 2 UI – Aadhaar + Device + Fingerprint ─────────────────────
+  // ── STEP 2 ─────────────────────────────────────────────────────────
   const renderAadhaarBiometric = () => (
     <div className="space-y-5">
       <div className="text-center">
@@ -856,13 +866,12 @@ export default function DmtPage() {
           Aadhaar Biometric Verification
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Enter Aadhaar number, select biometric device, and capture fingerprint
-          for{" "}
+          Enter Aadhaar, select device, and capture fingerprint for{" "}
           <span className="font-semibold text-foreground">{mobileNumber}</span>.
         </p>
       </div>
 
-      {/* Mobile – read-only */}
+      {/* Mobile read-only */}
       <div className="space-y-1">
         <Label className="text-sm font-medium text-foreground">
           Mobile Number
@@ -896,7 +905,7 @@ export default function DmtPage() {
         )}
       </div>
 
-      {/* Device Selection */}
+      {/* Device dropdown */}
       <div className="space-y-1">
         <Label
           htmlFor="device-select"
@@ -919,7 +928,7 @@ export default function DmtPage() {
           ))}
         </select>
 
-        {/* Device status indicator */}
+        {/* Device status */}
         <div className="mt-1">
           {deviceStatus === "checking" && (
             <p className="text-xs text-blue-600 flex items-center gap-1">
@@ -932,20 +941,24 @@ export default function DmtPage() {
               <CheckCircle className="w-3 h-3" />{" "}
               {selectedDevice === "morpho" ? "Morpho" : "Mantra"} RD Service
               detected
+              {discoveredUrl.current && (
+                <span className="text-slate-400 ml-1">
+                  ({discoveredUrl.current})
+                </span>
+              )}
             </p>
           )}
           {deviceStatus === "not_found" && (
             <p className="text-xs text-amber-600">
               ⚠️{" "}
               {selectedDevice === "morpho" ? "Morpho" : "Mantra"} RD Service
-              not detected. Make sure the service is installed and running, then
-              try capturing.
+              not detected. Ensure the service is running, then try capturing.
             </p>
           )}
         </div>
       </div>
 
-      {/* Capture Button */}
+      {/* Capture */}
       <div className="space-y-2">
         <Button
           type="button"
@@ -979,7 +992,7 @@ export default function DmtPage() {
       </div>
 
       {error && (
-        <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-md px-3 py-2 whitespace-pre-line">
           {error}
         </p>
       )}
@@ -1011,7 +1024,7 @@ export default function DmtPage() {
     </div>
   );
 
-  // ── STEP 3 UI – OTP ───────────────────────────────────────────────
+  // ── STEP 3 ─────────────────────────────────────────────────────────
   const renderOtpVerify = () => (
     <div className="space-y-5">
       <div className="text-center">
@@ -1125,9 +1138,9 @@ export default function DmtPage() {
       <div>
         <h2 className="text-xl font-bold text-foreground">Wallet Created!</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Your DMT wallet for{" "}
+          DMT wallet for{" "}
           <span className="font-semibold text-foreground">{mobileNumber}</span>{" "}
-          has been successfully created and verified.
+          created and verified successfully.
         </p>
       </div>
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -1151,15 +1164,13 @@ export default function DmtPage() {
   );
 
   // ==================================================================
-  // Main layout
+  // Layout
   // ==================================================================
   return (
     <div className="min-h-screen bg-background flex w-full">
       <AppSidebar />
-
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
-
         <main className="flex-1 p-6 space-y-6 overflow-auto">
           <div className="paybazaar-gradient rounded-lg p-6 text-white">
             <div className="flex items-center space-x-4">
