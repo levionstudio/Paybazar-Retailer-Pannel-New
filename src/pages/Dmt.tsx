@@ -149,27 +149,47 @@ async function captureFingerprint(
   device: BiometricDevice,
   baseUrl: string | null
 ): Promise<string> {
-  const urls = baseUrl 
+  const urls = baseUrl
     ? [baseUrl, ...RD_SERVICE_URLS[device].filter(u => u !== baseUrl)]
     : RD_SERVICE_URLS[device];
 
   for (const url of urls) {
     try {
       console.log(`[Bio] Capture: ${url}/rd/capture`);
-      const response = await makeXHRCall(`${url}/rd/capture`, "CAPTURE", CAPTURE_PID_OPTIONS);
-      
+
+      const response = await makeXHRCall(
+        `${url}/rd/capture`,
+        "CAPTURE",
+        CAPTURE_PID_OPTIONS
+      );
+
+      // Parse XML response
       const parser = new DOMParser();
       const doc = parser.parseFromString(response, "text/xml");
-      const resp = doc.querySelector("Resp");
-      const errCode = resp?.getAttribute("errCode") || "";
+
+      // Check capture status
+      const respNode = doc.querySelector("Resp");
+      const errCode = respNode?.getAttribute("errCode") || "";
 
       if (errCode !== "0") {
-        const errInfo = resp?.getAttribute("errInfo") || "Capture failed";
+        const errInfo =
+          respNode?.getAttribute("errInfo") || "Capture failed";
         throw new Error(`${errInfo} (${errCode})`);
       }
 
-      console.log(`[Bio] ✓ Success`);
-      return response;
+      // 🔥 Extract ONLY <Data> block
+      const dataNode = doc.querySelector("Data");
+
+      if (!dataNode || !dataNode.textContent) {
+        throw new Error("Data block not found in PID response");
+      }
+
+      const dataBlock = dataNode.textContent.trim();
+
+      console.log("[Bio] ✓ Success - Data block extracted");
+      console.log("[Bio] Data length:", dataBlock.length);
+
+      return dataBlock; // ✅ return only encrypted Data block
     } catch (err: any) {
       console.log(`[Bio] ✗ ${url}: ${err.message}`);
     }
@@ -177,10 +197,10 @@ async function captureFingerprint(
 
   throw new Error(
     "Unable to capture fingerprint.\n\n" +
-    "Please ensure:\n" +
-    "• RD Service is running (check Services)\n" +
-    "• Device is connected via USB\n" +
-    "• No other app is using the device"
+      "Please ensure:\n" +
+      "• RD Service is running (check Services)\n" +
+      "• Device is connected via USB\n" +
+      "• No other app is using the device"
   );
 }
 
