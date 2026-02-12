@@ -72,153 +72,95 @@ interface VerifyWalletResponse {
 }
 
 type BiometricDevice = "morpho" | "mantra";
-type PidDataFormat = "full_xml" | "data_only" | "base64_xml";
 
 const DEVICE_OPTIONS: { value: BiometricDevice; label: string }[] = [
   { value: "mantra", label: "Mantra (MFS100)" },
   { value: "morpho", label: "Morpho (MSO 1300 E2 / E3)" },
 ];
 
-const PID_FORMAT_OPTIONS: { value: PidDataFormat; label: string; description: string }[] = [
-  { 
-    value: "full_xml", 
-    label: "Full XML", 
-    description: "Send complete <PidData> XML (most common)" 
-  },
-  { 
-    value: "data_only", 
-    label: "Data Element Only", 
-    description: "Extract only <Data> element content" 
-  },
-  { 
-    value: "base64_xml", 
-    label: "Base64 Encoded XML", 
-    description: "Base64 encode the full XML" 
-  },
-];
-
-const RD_SERVICE_URLS = {
-  mantra: [
-    "https://127.0.0.1:11100",
-    "http://127.0.0.1:11100", 
-    "https://127.0.0.1:8005",
-    "http://127.0.0.1:8005",
-  ],
-  morpho: [
-    "https://127.0.0.1:11100",
-    "http://127.0.0.1:11100",
-  ],
+// ✅ MATCHING PHP: Exact same PID options format
+const getPidOptions = (device: BiometricDevice): string => {
+  if (device === "morpho") {
+    return '<PidOptions ver="1.0"><Opts env="P" fCount="1" fType="2" iCount="0" pCount="0" pgCount="2" format="0" pidVer="2.0" timeout="15000" posh="UNKNOWN" /></PidOptions>';
+  } else {
+    // mantra
+    return '<PidOptions ver="1.0"><Opts fCount="1" fType="2" iCount="0" pCount="0" pgCount="2" format="0" pidVer="2.0" timeout="10000" pTimeout="20000" posh="UNKNOWN" env="P" /><CustOpts><Param name="mantrakey" value="" /></CustOpts></PidOptions>';
+  }
 };
 
-const CAPTURE_PID_OPTIONS = `<?xml version="1.0"?>
-<PidOptions ver="1.0">
-<Opts fCount="1" fType="2" pCount="0" format="0" pidVer="2.0" timeout="20000" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" />
-</PidOptions>`;
+const getDeviceUrl = (device: BiometricDevice): string => {
+  if (device === "morpho") {
+    return "https://localhost:11100/capture";
+  } else {
+    // mantra
+    return "https://127.0.0.1:11100/rd/capture";
+  }
+};
 
-function makeXHRCall(url: string, method: string, data: string = ""): Promise<string> {
+// ✅ MATCHING PHP: XHR call exactly like PHP code
+function captureWithXHR(url: string, pidOpts: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open(method, url, true);
-      xhr.timeout = 10000;
+    const xhr = new XMLHttpRequest();
+    
+    xhr.open('CAPTURE', url, true);
+    xhr.setRequestHeader("Content-Type", "text/xml");
+    xhr.setRequestHeader("Accept", "text/xml");
+    xhr.timeout = 15000;
 
-      xhr.onreadystatechange = function () {
-        if (xhr.readyState === 4) {
-          if (xhr.status === 200) {
-            resolve(xhr.responseText);
-          } else if (xhr.status === 0) {
-            reject(new Error("Connection failed"));
+    xhr.onerror = function (e) {
+      reject(new Error("Driver not supported or installed"));
+    };
+
+    xhr.ontimeout = function () {
+      reject(new Error("Request timeout"));
+    };
+
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4) {
+        if (xhr.status === 200) {
+          const responseText = xhr.responseText;
+          
+          if (responseText.includes('errCode')) {
+            // Extract errCode using regex (matching PHP)
+            const errCodeMatch = responseText.match(/errCode="(.*?)"/);
+            const errInfoMatch = responseText.match(/errInfo="(.*?)"/);
+            
+            if (errCodeMatch && errCodeMatch[1] !== '0') {
+              const errorMsg = errInfoMatch ? errInfoMatch[1] : "Unknown error";
+              reject(new Error(`Error capturing biometric data: ${errorMsg}`));
+            } else {
+              // Success - return full XML
+              resolve(responseText);
+            }
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            reject(new Error("Invalid response format"));
           }
+        } else {
+          reject(new Error(`HTTP ${xhr.status}`));
         }
-      };
+      }
+    };
 
-      xhr.onerror = () => reject(new Error("Network error"));
-      xhr.ontimeout = () => reject(new Error("Timeout"));
-
-      xhr.send(data);
-    } catch (err: any) {
-      reject(err);
-    }
+    xhr.send(pidOpts);
   });
 }
 
-async function discoverDevice(device: BiometricDevice): Promise<string | null> {
-  const urls = RD_SERVICE_URLS[device];
+async function captureFingerprint(device: BiometricDevice): Promise<string> {
+  const url = getDeviceUrl(device);
+  const pidOpts = getPidOptions(device);
+  
+  console.log(`[Bio] Capturing from: ${url}`);
+  console.log(`[Bio] PID Options:`, pidOpts);
 
-  for (const baseUrl of urls) {
-    try {
-      console.log(`[Bio] Trying: ${baseUrl}`);
-      await makeXHRCall(`${baseUrl}/rd/info`, "RDSERVICE");
-      console.log(`[Bio] ✓ Found at: ${baseUrl}`);
-      return baseUrl;
-    } catch (err: any) {
-      console.log(`[Bio] ✗ ${baseUrl}: ${err.message}`);
-    }
+  try {
+    const responseXML = await captureWithXHR(url, pidOpts);
+    console.log("[Bio] ✓ Capture Successful");
+    console.log("[Bio] Response length:", responseXML.length);
+    return responseXML.trim();
+  } catch (err: any) {
+    console.error("[Bio] ✗ Capture failed:", err.message);
+    throw err;
   }
-
-  return null;
-}
-
-async function captureFingerprint(
-  device: BiometricDevice,
-  baseUrl: string | null
-): Promise<string> {
-  const urls = baseUrl
-    ? [baseUrl, ...RD_SERVICE_URLS[device].filter(u => u !== baseUrl)]
-    : RD_SERVICE_URLS[device];
-
-  for (const url of urls) {
-    try {
-      console.log(`[Bio] Capture: ${url}/rd/capture`);
-
-      const response = await makeXHRCall(
-        `${url}/rd/capture`,
-        "CAPTURE",
-        CAPTURE_PID_OPTIONS
-      );
-
-      console.log("[Bio] Raw response:", response.substring(0, 500));
-
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(response, "text/xml");
-
-      const parseError = doc.querySelector("parsererror");
-      if (parseError) {
-        throw new Error("Invalid XML response");
-      }
-
-      const pidDataNode = doc.querySelector("PidData");
-      if (!pidDataNode) {
-        throw new Error("No PidData element found");
-      }
-
-      const respNode = doc.querySelector("Resp");
-      const errCode = respNode?.getAttribute("errCode");
-
-      if (errCode !== "0") {
-        const errInfo = respNode?.getAttribute("errInfo") || "Capture failed";
-        throw new Error(`${errInfo} (${errCode})`);
-      }
-
-      console.log("[Bio] ✓ Capture Successful");
-      console.log("[Bio] PID XML length:", response.length);
-
-      return response.trim();
-
-    } catch (err: any) {
-      console.log(`[Bio] ✗ ${url}: ${err.message}`);
-    }
-  }
-
-  throw new Error(
-    "Unable to capture fingerprint.\n\n" +
-    "Please ensure:\n" +
-    "• RD Service is running\n" +
-    "• Device is connected via USB\n" +
-    "• No other app is using the device"
-  );
 }
 
 function requestGeolocation(): Promise<{ lat: number; lng: number }> {
@@ -266,11 +208,8 @@ export default function DmtPage() {
   const [stateResp, setStateResp] = useState("");
 
   const [selectedDevice, setSelectedDevice] = useState<BiometricDevice>("mantra");
-  const [pidDataFormat, setPidDataFormat] = useState<PidDataFormat>("full_xml");
   const [pidData, setPidData] = useState("");
   const [capturing, setCapturing] = useState(false);
-  const [deviceStatus, setDeviceStatus] = useState<"unknown" | "checking" | "ready" | "not_found">("unknown");
-  const discoveredUrl = useRef<string | null>(null);
 
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
@@ -317,25 +256,6 @@ export default function DmtPage() {
         });
     }
   }, [toast]);
-
-  useEffect(() => {
-    if (step !== Step.AADHAAR_BIOMETRIC) return;
-
-    let cancelled = false;
-    setDeviceStatus("checking");
-    setPidData("");
-    discoveredUrl.current = null;
-
-    discoverDevice(selectedDevice).then((url) => {
-      if (cancelled) return;
-      discoveredUrl.current = url;
-      setDeviceStatus(url ? "ready" : "not_found");
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDevice, step]);
 
   const clearError = () => setError(null);
 
@@ -396,28 +316,22 @@ export default function DmtPage() {
     clearError();
 
     try {
-      if (!discoveredUrl.current) {
-        throw new Error("RD Service not detected. Please start RD Service.");
-      }
-
-      console.log("Starting biometric capture...");
+      console.log("=== BIOMETRIC CAPTURE START ===");
       console.log("Device:", selectedDevice);
-      console.log("URL:", discoveredUrl.current);
 
-      const pidXML = await captureFingerprint(
-        selectedDevice,
-        discoveredUrl.current
-      );
+      // ✅ MATCHING PHP: Capture exactly like PHP code
+      const pidXML = await captureFingerprint(selectedDevice);
 
       if (!pidXML) {
         throw new Error("Failed to capture PID data");
       }
 
+      // ✅ Store complete XML (matching PHP organization_fullData field)
       setPidData(pidXML);
 
       console.log("✅ PID captured successfully");
-      console.log("PID XML length:", pidXML.length);
-      console.log("PID preview:", pidXML.substring(0, 200));
+      console.log("Size:", (pidXML.length / 1024).toFixed(2), "KB");
+      console.log("=== BIOMETRIC CAPTURE END ===");
 
       toast({
         title: "Success",
@@ -443,96 +357,47 @@ export default function DmtPage() {
   }, [selectedDevice, toast]);
 
   const handleCreateWallet = useCallback(async () => {
-    console.log("=== CREATE WALLET START ===");
+    console.log("=== CREATE WALLET API CALL START ===");
     console.log("Timestamp:", new Date().toISOString());
     
+    // Validation
     if (!pidData) {
-      console.error("❌ Validation failed: No PID data");
+      console.error("❌ No PID data");
       setError("Please capture fingerprint first");
       return;
     }
-    console.log("✅ PID data present:", pidData.length, "bytes");
     
     if (latitude === null || longitude === null) {
-      console.error("❌ Validation failed: Location not available");
+      console.error("❌ No location data");
       setError("Location not available");
       return;
     }
-    console.log("✅ Location available:", { latitude, longitude });
 
     clearError();
     setLoading(true);
 
-    // ✅ Process PID data based on selected format
-    let processedPidData = pidData;
-    
-    try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(pidData, "text/xml");
-      
-      console.log("📊 Processing PID with format:", pidDataFormat);
-      
-      switch (pidDataFormat) {
-        case "full_xml":
-          // Send complete XML as-is (most common)
-          processedPidData = pidData;
-          console.log("   → Using Full XML");
-          break;
-          
-        case "data_only":
-          // Extract only <Data> element content
-          const dataElement = doc.querySelector("Data");
-          if (dataElement && dataElement.textContent) {
-            processedPidData = dataElement.textContent;
-            console.log("   → Extracted <Data> element only");
-            console.log("   → Length:", processedPidData.length);
-          } else {
-            console.error("   → Could not find <Data> element, falling back to full XML");
-          }
-          break;
-          
-        case "base64_xml":
-          // Base64 encode the full XML
-          processedPidData = btoa(pidData);
-          console.log("   → Base64 encoded full XML");
-          console.log("   → Encoded length:", processedPidData.length);
-          break;
-      }
-      
-      console.log("   → Final PID length:", processedPidData.length);
-      console.log("   → Preview:", processedPidData.substring(0, 100));
-      
-    } catch (err) {
-      console.warn("⚠️ Could not parse PID XML:", err);
-      processedPidData = pidData; // Fallback to original
-    }
-
+    // ✅ MATCHING PHP: Send complete PID XML as-is (organization_fullData)
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
       lat: latitude,
       long: longitude,
       aadhaar_number: aadharNumber,
-      pid_data: processedPidData,
+      pid_data: pidData, // Complete XML string from device
       is_iris: 2,
     };
 
-    console.log("📤 Request payload:", {
-      retailer_id: retailerId,
-      mobile_no: mobileNumber,
-      lat: latitude,
-      long: longitude,
-      aadhaar_number: aadharNumber,
-      pid_data_format: pidDataFormat,
-      pid_data_length: processedPidData.length,
-      pid_data_preview: processedPidData.substring(0, 100),
-      is_iris: 2,
-    });
-
-    console.log("🌐 API endpoint:", `${API_BASE_URL}/dmt/create/wallet`);
+    console.log("📤 API Request:");
+    console.log("  Endpoint:", `${API_BASE_URL}/dmt/create/wallet`);
+    console.log("  Retailer ID:", retailerId);
+    console.log("  Mobile:", mobileNumber);
+    console.log("  Aadhaar:", aadharNumber);
+    console.log("  Location:", { lat: latitude, long: longitude });
+    console.log("  PID Size:", (pidData.length / 1024).toFixed(2), "KB");
+    console.log("  is_iris:", 2);
+    console.log("  PID Preview:", pidData.substring(0, 150));
 
     try {
-      console.log("⏳ Sending request...");
       const startTime = Date.now();
       
       const res = await axios.post<CreateWalletResponse>(
@@ -543,50 +408,44 @@ export default function DmtPage() {
       
       const duration = Date.now() - startTime;
       console.log(`✅ Response received in ${duration}ms`);
-      console.log("📥 Full response:", JSON.stringify(res.data, null, 2));
+      console.log("📥 Response:", JSON.stringify(res.data, null, 2));
       
       const createRes = res.data?.data?.response;
-      console.log("📊 Response data:", createRes);
 
       if (createRes?.error !== 0) {
-        console.error("❌ API returned error:", {
-          error: createRes?.error,
-          msg: createRes?.msg,
-          Description: createRes?.Description,
-          AccountExists: createRes?.AccountExists,
-        });
-        
         const errorMsg = createRes?.Description || createRes?.msg || "Failed to create wallet";
-        console.error("Error message to display:", errorMsg);
+        console.error("❌ API Error:", errorMsg);
+        console.error("Error Code:", createRes?.error);
         setError(errorMsg);
         setLoading(false);
         return;
       }
 
       console.log("✅ Wallet creation successful!");
-      toast({ title: "OTP Sent", description: "Check your mobile" });
+      toast({ title: "OTP Sent", description: "Check your mobile for OTP" });
       setStep(Step.OTP_VERIFY);
       
     } catch (err: any) {
       console.error("=== CREATE WALLET ERROR ===");
-      console.error("Error type:", err.constructor.name);
-      console.error("Error message:", err.message);
       
       if (err.response) {
-        console.error("❌ HTTP Error Response:");
-        console.error("Status:", err.response.status);
-        console.error("Data:", JSON.stringify(err.response.data, null, 2));
+        console.error("HTTP Status:", err.response.status);
+        console.error("Response Data:", JSON.stringify(err.response.data, null, 2));
+      } else if (err.request) {
+        console.error("No response received");
+      } else {
+        console.error("Request setup error:", err.message);
       }
       
-      const msg = err.response?.data?.message || err.message || "Error";
+      const msg = err.response?.data?.message || err.message || "Error creating wallet";
       setError(msg);
       toast({ title: "Error", description: msg, variant: "destructive" });
       
     } finally {
       setLoading(false);
-      console.log("=== CREATE WALLET END ===");
+      console.log("=== CREATE WALLET API CALL END ===");
     }
-  }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, pidData, pidDataFormat, toast]);
+  }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, pidData, toast]);
 
   const handleVerifySubmit = useCallback(async () => {
     clearError();
@@ -776,41 +635,6 @@ export default function DmtPage() {
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-
-        <div className="mt-1">
-          {deviceStatus === "checking" && (
-            <p className="text-xs text-blue-600 flex items-center gap-1">
-              <Loader2 className="w-3 h-3 animate-spin" /> Detecting RD Service…
-            </p>
-          )}
-          {deviceStatus === "ready" && (
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <CheckCircle className="w-3 h-3" /> RD Service detected
-              {discoveredUrl.current && <span className="text-slate-400 ml-1">({discoveredUrl.current})</span>}
-            </p>
-          )}
-          {deviceStatus === "not_found" && (
-            <p className="text-xs text-amber-600">⚠️ RD Service not detected. Ensure service is running.</p>
-          )}
-        </div>
-      </div>
-
-      {/* PID Data Format Selector */}
-      <div className="space-y-1 bg-blue-50 border border-blue-200 rounded-md p-3">
-        <Label htmlFor="pid-format" className="text-blue-900">PID Data Format (Testing)</Label>
-        <select
-          id="pid-format"
-          value={pidDataFormat}
-          onChange={(e) => setPidDataFormat(e.target.value as PidDataFormat)}
-          className="flex h-10 w-full rounded-md border border-blue-300 bg-white px-3 py-2 text-sm"
-        >
-          {PID_FORMAT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <p className="text-xs text-blue-700 mt-1">
-          {PID_FORMAT_OPTIONS.find(o => o.value === pidDataFormat)?.description}
-        </p>
       </div>
 
       <div className="space-y-2">
