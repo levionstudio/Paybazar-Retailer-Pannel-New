@@ -90,17 +90,19 @@ const DEVICE_OPTIONS: { value: BiometricDevice; label: string }[] = [
 
 // ---------------------------------------------------------------------------
 // RD Service URLs to try (in priority order)
+// FIXED: HTTP URLs first as they're more common
 // ---------------------------------------------------------------------------
 const MANTRA_URLS = [
+  "http://127.0.0.1:11100/rd",
+  "http://127.0.0.1:8005/rd",
+  "https://127.0.0.1:11100/rd",
   "https://127.0.0.1:8005/rd",
   "https://127.0.0.1:8004/rd",
-  "http://127.0.0.1:8005/rd",
-  "http://127.0.0.1:11100/rd",
 ];
 
 const MORPHO_URLS = [
-  "https://127.0.0.1:11100",
   "http://127.0.0.1:11100",
+  "https://127.0.0.1:11100",
 ];
 
 // ---------------------------------------------------------------------------
@@ -115,17 +117,24 @@ const CAPTURE_PID_OPTIONS =
   `</PidOptions>`;
 
 // ---------------------------------------------------------------------------
-// XMLHttpRequest-based POST helper
+// FIXED: XMLHttpRequest-based POST helper WITHOUT Content-Type header
 // ---------------------------------------------------------------------------
 // We use XMLHttpRequest instead of fetch() because many RD Services
 // (especially Mantra on port 11100) handle XHR CORS differently from fetch.
 // This is the standard approach used by UIDAI-integrated fintech apps.
+// 
+// CRITICAL FIX: We do NOT set the Content-Type header because it triggers
+// a CORS preflight request that the Mantra device doesn't support.
+// The browser will automatically use text/plain which works fine.
 // ---------------------------------------------------------------------------
 function xhrPost(url: string, body: string, timeoutMs = 15000): Promise<string> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url, true);
-    xhr.setRequestHeader("Content-Type", "text/xml");
+    
+    // CRITICAL FIX: DO NOT set Content-Type header
+    // xhr.setRequestHeader("Content-Type", "text/xml"); // ❌ REMOVED - triggers CORS preflight
+    
     xhr.timeout = timeoutMs;
 
     xhr.onreadystatechange = () => {
