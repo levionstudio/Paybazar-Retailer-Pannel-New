@@ -394,6 +394,12 @@ export default function DmtPage() {
 
     clearError();
     setLoading(true);
+function toBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  bytes.forEach((b) => (binary += String.fromCharCode(b)));
+  return btoa(binary);
+}
 
     // Step 3: Prepare request payload
     const requestPayload = {
@@ -402,9 +408,10 @@ export default function DmtPage() {
       lat: latitude,
       long: longitude,
       aadhar_number: aadharNumber,
-      pid_data: pidData,
+      pid_data: toBase64(pidData),
       is_iris: 2,
     };
+
 
     console.log("📤 Request payload:", {
       retailer_id: retailerId,
@@ -412,8 +419,7 @@ export default function DmtPage() {
       lat: latitude,
       long: longitude,
       aadhar_number: aadharNumber,
-      pid_data_length: pidData.length,
-      pid_data_preview: pidData.substring(0, 100) + "...",
+      pid_data: toBase64(pidData),
       is_iris: 2,
     });
 
