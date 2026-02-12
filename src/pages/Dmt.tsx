@@ -370,48 +370,129 @@ export default function DmtPage() {
   }, [selectedDevice, toast]);
 
   const handleCreateWallet = useCallback(async () => {
+    console.log("=== CREATE WALLET START ===");
+    console.log("Timestamp:", new Date().toISOString());
+    
+    // Step 1: Validate PID data
     if (!pidData) {
+      console.error("❌ Validation failed: No PID data");
       setError("Please capture fingerprint first");
       return;
     }
+    console.log("✅ PID data present:", pidData.length, "bytes");
+    console.log("PID data preview:", pidData.substring(0, 200) + "...");
+    
+    // Step 2: Validate location
     if (latitude === null || longitude === null) {
+      console.error("❌ Validation failed: Location not available");
+      console.log("Latitude:", latitude);
+      console.log("Longitude:", longitude);
       setError("Location not available");
       return;
     }
+    console.log("✅ Location available:", { latitude, longitude });
 
     clearError();
     setLoading(true);
 
+    // Step 3: Prepare request payload
+    const requestPayload = {
+      retailer_id: retailerId,
+      mobile_no: mobileNumber,
+      lat: latitude,
+      long: longitude,
+      aadhar_number: aadharNumber,
+      pid_data: pidData,
+      is_iris: 2,
+    };
+
+    console.log("📤 Request payload:", {
+      retailer_id: retailerId,
+      mobile_no: mobileNumber,
+      lat: latitude,
+      long: longitude,
+      aadhar_number: aadharNumber,
+      pid_data_length: pidData.length,
+      pid_data_preview: pidData.substring(0, 100) + "...",
+      is_iris: 2,
+    });
+
+    console.log("🌐 API endpoint:", `${API_BASE_URL}/dmt/create/wallet`);
+    console.log("🔑 Auth headers:", getAuthHeaders());
+
     try {
+      console.log("⏳ Sending request...");
+      const startTime = Date.now();
+      
       const res = await axios.post<CreateWalletResponse>(
         `${API_BASE_URL}/dmt/create/wallet`,
-        {
-          retailer_id: retailerId,
-          mobile_no: mobileNumber,
-          lat: latitude,
-          long: longitude,
-          aadhar_number: aadharNumber,
-          pid_data: pidData,
-          is_iris: 2,
-        },
+        requestPayload,
         getAuthHeaders()
       );
+      
+      const duration = Date.now() - startTime;
+      console.log(`✅ Response received in ${duration}ms`);
+      console.log("📥 Full response:", JSON.stringify(res.data, null, 2));
+      
       const createRes = res.data?.data?.response;
+      console.log("📊 Response data:", createRes);
 
+      // Step 4: Check response error code
       if (createRes?.error !== 0) {
-        setError(createRes?.Description || createRes?.msg || "Failed to create wallet");
+        console.error("❌ API returned error:", {
+          error: createRes?.error,
+          msg: createRes?.msg,
+          Description: createRes?.Description,
+          AccountExists: createRes?.AccountExists,
+        });
+        
+        const errorMsg = createRes?.Description || createRes?.msg || "Failed to create wallet";
+        console.error("Error message to display:", errorMsg);
+        setError(errorMsg);
         setLoading(false);
         return;
       }
 
+      // Step 5: Success
+      console.log("✅ Wallet creation successful!");
+      console.log("Account created:", createRes?.AccountExists);
+      console.log("Message:", createRes?.msg);
+      
       toast({ title: "OTP Sent", description: "Check your mobile" });
+      
+      console.log("🔄 Moving to OTP verification step");
       setStep(Step.OTP_VERIFY);
+      
     } catch (err: any) {
+      console.error("=== CREATE WALLET ERROR ===");
+      console.error("Error type:", err.constructor.name);
+      console.error("Error message:", err.message);
+      
+      if (err.response) {
+        console.error("❌ HTTP Error Response:");
+        console.error("Status:", err.response.status);
+        console.error("Status text:", err.response.statusText);
+        console.error("Headers:", err.response.headers);
+        console.error("Data:", JSON.stringify(err.response.data, null, 2));
+      } else if (err.request) {
+        console.error("❌ No response received:");
+        console.error("Request:", err.request);
+      } else {
+        console.error("❌ Request setup error:", err.message);
+      }
+      
+      console.error("Full error object:", err);
+      console.error("Error stack:", err.stack);
+      
       const msg = err.response?.data?.message || err.message || "Error";
+      console.error("Error message to display:", msg);
+      
       setError(msg);
       toast({ title: "Error", description: msg, variant: "destructive" });
+      
     } finally {
       setLoading(false);
+      console.log("=== CREATE WALLET END ===");
     }
   }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, pidData, toast]);
 
