@@ -388,8 +388,8 @@ export default function DmtPage() {
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
-      lat: latitude.toString(),
-      long: longitude.toString(),
+      lat: latitude,
+      long: longitude,
       aadhaar_number: aadharNumber,
       pid_data: pidData, // ✅ Just the base64 string from <Data> field
       is_iris: 2,
