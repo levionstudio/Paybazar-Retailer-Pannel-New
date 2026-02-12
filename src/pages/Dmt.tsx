@@ -92,10 +92,10 @@ const RD_SERVICE_URLS = {
   ],
 };
 
+// ✅ FIXED: Updated to match working format with correct wadh parameter
 const CAPTURE_PID_OPTIONS = `<?xml version="1.0"?>
 <PidOptions ver="1.0">
-<Opts fCount="1" fType="2" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" posh="UNKNOWN" env="P" wadh="" />
-<CustOpts><Param name="mantrakey" value="" /></CustOpts>
+<Opts fCount="1" fType="2" pCount="0" format="0" pidVer="2.0" timeout="20000" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" />
 </PidOptions>`;
 
 // Simple XHR POST - no custom headers
@@ -145,6 +145,7 @@ async function discoverDevice(device: BiometricDevice): Promise<string | null> {
   return null;
 }
 
+// ✅ FIXED: Updated to properly serialize PID data as XML string
 async function captureFingerprint(
   device: BiometricDevice,
   baseUrl: string | null
@@ -163,23 +164,37 @@ async function captureFingerprint(
         CAPTURE_PID_OPTIONS
       );
 
+      console.log("[Bio] Raw response:", response.substring(0, 500));
+
       // Parse XML to validate capture success
       const parser = new DOMParser();
       const doc = parser.parseFromString(response, "text/xml");
 
+      // Check for XML parsing errors
+      const parseError = doc.querySelector("parsererror");
+      if (parseError) {
+        throw new Error("Invalid XML response");
+      }
+
+      // Look for PidData root element
+      const pidDataNode = doc.querySelector("PidData");
+      if (!pidDataNode) {
+        throw new Error("No PidData element found");
+      }
+
+      // Check Resp element for error code
       const respNode = doc.querySelector("Resp");
       const errCode = respNode?.getAttribute("errCode");
 
       if (errCode !== "0") {
-        const errInfo =
-          respNode?.getAttribute("errInfo") || "Capture failed";
+        const errInfo = respNode?.getAttribute("errInfo") || "Capture failed";
         throw new Error(`${errInfo} (${errCode})`);
       }
 
       console.log("[Bio] ✓ Capture Successful");
       console.log("[Bio] PID XML length:", response.length);
 
-      // ✅ Return FULL <PidData> XML
+      // ✅ Return FULL <PidData> XML as string (this is what backend expects)
       return response.trim();
 
     } catch (err: any) {
@@ -366,58 +381,59 @@ export default function DmtPage() {
     }
   }, [mobileNumber, retailerId, locationStatus, toast, navigate]);
 
-const handleCaptureFingerprint = useCallback(async () => {
-  setCapturing(true);
-  clearError();
+  // ✅ FIXED: Updated capture handler to properly save PID XML
+  const handleCaptureFingerprint = useCallback(async () => {
+    setCapturing(true);
+    clearError();
 
-  try {
-    // Ensure device is detected
-    if (!discoveredUrl.current) {
-      throw new Error("RD Service not detected. Please start RD Service.");
+    try {
+      // Ensure device is detected
+      if (!discoveredUrl.current) {
+        throw new Error("RD Service not detected. Please start RD Service.");
+      }
+
+      console.log("Starting biometric capture...");
+      console.log("Device:", selectedDevice);
+      console.log("URL:", discoveredUrl.current);
+
+      const pidXML = await captureFingerprint(
+        selectedDevice,
+        discoveredUrl.current
+      );
+
+      if (!pidXML) {
+        throw new Error("Failed to capture PID data");
+      }
+
+      // ✅ Save FULL PidData XML string (RechargeKit requires complete XML)
+      setPidData(pidXML);
+
+      console.log("✅ PID captured successfully");
+      console.log("PID XML length:", pidXML.length);
+      console.log("PID preview:", pidXML.substring(0, 200));
+
+      toast({
+        title: "Success",
+        description: "Fingerprint captured successfully",
+      });
+
+    } catch (err: any) {
+      console.error("Capture error:", err);
+
+      const message = err?.message || "Fingerprint capture failed";
+
+      setError(message);
+
+      toast({
+        title: "Capture Failed",
+        description: message,
+        variant: "destructive",
+      });
+
+    } finally {
+      setCapturing(false);
     }
-
-    console.log("Starting biometric capture...");
-    console.log("Device:", selectedDevice);
-    console.log("URL:", discoveredUrl.current);
-
-    const pidXML = await captureFingerprint(
-      selectedDevice,
-      discoveredUrl.current
-    );
-
-    if (!pidXML) {
-      throw new Error("Failed to capture PID data");
-    }
-
-    // Save FULL PidData XML (RechargeKit requires full XML)
-    setPidData(pidXML);
-
-    console.log("PID captured successfully");
-    console.log("PID length:", pidXML.length);
-
-    toast({
-      title: "Success",
-      description: "Fingerprint captured successfully",
-    });
-
-  } catch (err: any) {
-    console.error("Capture error:", err);
-
-    const message =
-      err?.message || "Fingerprint capture failed";
-
-    setError(message);
-
-    toast({
-      title: "Capture Failed",
-      description: message,
-      variant: "destructive",
-    });
-
-  } finally {
-    setCapturing(false);
-  }
-}, [selectedDevice, toast]);
+  }, [selectedDevice, toast]);
 
 
   const handleCreateWallet = useCallback(async () => {
@@ -446,31 +462,30 @@ const handleCaptureFingerprint = useCallback(async () => {
     clearError();
     setLoading(true);
 
-
     // Step 3: Prepare request payload
+    // ✅ FIXED: Send PID data as XML string (not parsed object)
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
       lat: latitude,
       long: longitude,
       aadhaar_number: aadharNumber,
-      pid_data: pidData,
+      pid_data: pidData, // ✅ Send as XML string
       is_iris: 2,
     };
-
 
     console.log("📤 Request payload:", {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
       lat: latitude,
       long: longitude,
-      aadhar_number: aadharNumber,
-      pid_data: pidData,
+      aadhaar_number: aadharNumber,
+      pid_data_length: pidData.length,
+      pid_data_preview: pidData.substring(0, 100),
       is_iris: 2,
     });
 
     console.log("🌐 API endpoint:", `${API_BASE_URL}/dmt/create/wallet`);
-    console.log("🔑 Auth headers:", getAuthHeaders());
 
     try {
       console.log("⏳ Sending request...");
