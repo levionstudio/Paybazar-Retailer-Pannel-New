@@ -163,13 +163,12 @@ async function captureFingerprint(
         CAPTURE_PID_OPTIONS
       );
 
-      // Parse XML response
+      // Parse XML to validate capture success
       const parser = new DOMParser();
       const doc = parser.parseFromString(response, "text/xml");
 
-      // Check capture status
       const respNode = doc.querySelector("Resp");
-      const errCode = respNode?.getAttribute("errCode") || "";
+      const errCode = respNode?.getAttribute("errCode");
 
       if (errCode !== "0") {
         const errInfo =
@@ -177,19 +176,12 @@ async function captureFingerprint(
         throw new Error(`${errInfo} (${errCode})`);
       }
 
-      // 🔥 Extract ONLY <Data> block
-      const dataNode = doc.querySelector("Data");
+      console.log("[Bio] ✓ Capture Successful");
+      console.log("[Bio] PID XML length:", response.length);
 
-      if (!dataNode || !dataNode.textContent) {
-        throw new Error("Data block not found in PID response");
-      }
+      // ✅ Return FULL <PidData> XML
+      return response.trim();
 
-      const dataBlock = dataNode.textContent.trim();
-
-      console.log("[Bio] ✓ Success - Data block extracted");
-      console.log("[Bio] Data length:", dataBlock.length);
-
-      return dataBlock; // ✅ return only encrypted Data block
     } catch (err: any) {
       console.log(`[Bio] ✗ ${url}: ${err.message}`);
     }
@@ -197,12 +189,13 @@ async function captureFingerprint(
 
   throw new Error(
     "Unable to capture fingerprint.\n\n" +
-      "Please ensure:\n" +
-      "• RD Service is running (check Services)\n" +
-      "• Device is connected via USB\n" +
-      "• No other app is using the device"
+    "Please ensure:\n" +
+    "• RD Service is running\n" +
+    "• Device is connected via USB\n" +
+    "• No other app is using the device"
   );
 }
+
 
 function requestGeolocation(): Promise<{ lat: number; lng: number }> {
   return new Promise((resolve, reject) => {
@@ -373,21 +366,59 @@ export default function DmtPage() {
     }
   }, [mobileNumber, retailerId, locationStatus, toast, navigate]);
 
-  const handleCaptureFingerprint = useCallback(async () => {
-    setCapturing(true);
-    clearError();
+const handleCaptureFingerprint = useCallback(async () => {
+  setCapturing(true);
+  clearError();
 
-    try {
-      const pid = await captureFingerprint(selectedDevice, discoveredUrl.current);
-      setPidData(pid);
-      toast({ title: "Success", description: "Fingerprint captured successfully" });
-    } catch (err: any) {
-      setError(err.message);
-      toast({ title: "Capture Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setCapturing(false);
+  try {
+    // Ensure device is detected
+    if (!discoveredUrl.current) {
+      throw new Error("RD Service not detected. Please start RD Service.");
     }
-  }, [selectedDevice, toast]);
+
+    console.log("Starting biometric capture...");
+    console.log("Device:", selectedDevice);
+    console.log("URL:", discoveredUrl.current);
+
+    const pidXML = await captureFingerprint(
+      selectedDevice,
+      discoveredUrl.current
+    );
+
+    if (!pidXML) {
+      throw new Error("Failed to capture PID data");
+    }
+
+    // Save FULL PidData XML (RechargeKit requires full XML)
+    setPidData(pidXML);
+
+    console.log("PID captured successfully");
+    console.log("PID length:", pidXML.length);
+
+    toast({
+      title: "Success",
+      description: "Fingerprint captured successfully",
+    });
+
+  } catch (err: any) {
+    console.error("Capture error:", err);
+
+    const message =
+      err?.message || "Fingerprint capture failed";
+
+    setError(message);
+
+    toast({
+      title: "Capture Failed",
+      description: message,
+      variant: "destructive",
+    });
+
+  } finally {
+    setCapturing(false);
+  }
+}, [selectedDevice, toast]);
+
 
   const handleCreateWallet = useCallback(async () => {
     console.log("=== CREATE WALLET START ===");
