@@ -72,13 +72,31 @@ interface VerifyWalletResponse {
 }
 
 type BiometricDevice = "morpho" | "mantra";
+type PidDataFormat = "full_xml" | "data_only" | "base64_xml";
 
 const DEVICE_OPTIONS: { value: BiometricDevice; label: string }[] = [
   { value: "mantra", label: "Mantra (MFS100)" },
   { value: "morpho", label: "Morpho (MSO 1300 E2 / E3)" },
 ];
 
-// CRITICAL: These are the EXACT URLs that the working test page uses
+const PID_FORMAT_OPTIONS: { value: PidDataFormat; label: string; description: string }[] = [
+  { 
+    value: "full_xml", 
+    label: "Full XML", 
+    description: "Send complete <PidData> XML (most common)" 
+  },
+  { 
+    value: "data_only", 
+    label: "Data Element Only", 
+    description: "Extract only <Data> element content" 
+  },
+  { 
+    value: "base64_xml", 
+    label: "Base64 Encoded XML", 
+    description: "Base64 encode the full XML" 
+  },
+];
+
 const RD_SERVICE_URLS = {
   mantra: [
     "https://127.0.0.1:11100",
@@ -92,13 +110,11 @@ const RD_SERVICE_URLS = {
   ],
 };
 
-// ✅ FIXED: Updated to match working format with correct wadh parameter
 const CAPTURE_PID_OPTIONS = `<?xml version="1.0"?>
 <PidOptions ver="1.0">
 <Opts fCount="1" fType="2" pCount="0" format="0" pidVer="2.0" timeout="20000" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" />
 </PidOptions>`;
 
-// Simple XHR POST - no custom headers
 function makeXHRCall(url: string, method: string, data: string = ""): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -145,7 +161,6 @@ async function discoverDevice(device: BiometricDevice): Promise<string | null> {
   return null;
 }
 
-// ✅ FIXED: Updated to properly serialize PID data as XML string
 async function captureFingerprint(
   device: BiometricDevice,
   baseUrl: string | null
@@ -166,23 +181,19 @@ async function captureFingerprint(
 
       console.log("[Bio] Raw response:", response.substring(0, 500));
 
-      // Parse XML to validate capture success
       const parser = new DOMParser();
       const doc = parser.parseFromString(response, "text/xml");
 
-      // Check for XML parsing errors
       const parseError = doc.querySelector("parsererror");
       if (parseError) {
         throw new Error("Invalid XML response");
       }
 
-      // Look for PidData root element
       const pidDataNode = doc.querySelector("PidData");
       if (!pidDataNode) {
         throw new Error("No PidData element found");
       }
 
-      // Check Resp element for error code
       const respNode = doc.querySelector("Resp");
       const errCode = respNode?.getAttribute("errCode");
 
@@ -194,7 +205,6 @@ async function captureFingerprint(
       console.log("[Bio] ✓ Capture Successful");
       console.log("[Bio] PID XML length:", response.length);
 
-      // ✅ Return FULL <PidData> XML as string (this is what backend expects)
       return response.trim();
 
     } catch (err: any) {
@@ -210,7 +220,6 @@ async function captureFingerprint(
     "• No other app is using the device"
   );
 }
-
 
 function requestGeolocation(): Promise<{ lat: number; lng: number }> {
   return new Promise((resolve, reject) => {
@@ -257,6 +266,7 @@ export default function DmtPage() {
   const [stateResp, setStateResp] = useState("");
 
   const [selectedDevice, setSelectedDevice] = useState<BiometricDevice>("mantra");
+  const [pidDataFormat, setPidDataFormat] = useState<PidDataFormat>("full_xml");
   const [pidData, setPidData] = useState("");
   const [capturing, setCapturing] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<"unknown" | "checking" | "ready" | "not_found">("unknown");
@@ -381,13 +391,11 @@ export default function DmtPage() {
     }
   }, [mobileNumber, retailerId, locationStatus, toast, navigate]);
 
-  // ✅ FIXED: Updated capture handler to properly save PID XML
   const handleCaptureFingerprint = useCallback(async () => {
     setCapturing(true);
     clearError();
 
     try {
-      // Ensure device is detected
       if (!discoveredUrl.current) {
         throw new Error("RD Service not detected. Please start RD Service.");
       }
@@ -405,7 +413,6 @@ export default function DmtPage() {
         throw new Error("Failed to capture PID data");
       }
 
-      // ✅ Save FULL PidData XML string (RechargeKit requires complete XML)
       setPidData(pidXML);
 
       console.log("✅ PID captured successfully");
@@ -435,25 +442,19 @@ export default function DmtPage() {
     }
   }, [selectedDevice, toast]);
 
-
   const handleCreateWallet = useCallback(async () => {
     console.log("=== CREATE WALLET START ===");
     console.log("Timestamp:", new Date().toISOString());
     
-    // Step 1: Validate PID data
     if (!pidData) {
       console.error("❌ Validation failed: No PID data");
       setError("Please capture fingerprint first");
       return;
     }
     console.log("✅ PID data present:", pidData.length, "bytes");
-    console.log("PID data preview:", pidData.substring(0, 200) + "...");
     
-    // Step 2: Validate location
     if (latitude === null || longitude === null) {
       console.error("❌ Validation failed: Location not available");
-      console.log("Latitude:", latitude);
-      console.log("Longitude:", longitude);
       setError("Location not available");
       return;
     }
@@ -462,15 +463,57 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    // Step 3: Prepare request payload
-    // ✅ FIXED: Send PID data as XML string (not parsed object)
+    // ✅ Process PID data based on selected format
+    let processedPidData = pidData;
+    
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(pidData, "text/xml");
+      
+      console.log("📊 Processing PID with format:", pidDataFormat);
+      
+      switch (pidDataFormat) {
+        case "full_xml":
+          // Send complete XML as-is (most common)
+          processedPidData = pidData;
+          console.log("   → Using Full XML");
+          break;
+          
+        case "data_only":
+          // Extract only <Data> element content
+          const dataElement = doc.querySelector("Data");
+          if (dataElement && dataElement.textContent) {
+            processedPidData = dataElement.textContent;
+            console.log("   → Extracted <Data> element only");
+            console.log("   → Length:", processedPidData.length);
+          } else {
+            console.error("   → Could not find <Data> element, falling back to full XML");
+          }
+          break;
+          
+        case "base64_xml":
+          // Base64 encode the full XML
+          processedPidData = btoa(pidData);
+          console.log("   → Base64 encoded full XML");
+          console.log("   → Encoded length:", processedPidData.length);
+          break;
+      }
+      
+      console.log("   → Final PID length:", processedPidData.length);
+      console.log("   → Preview:", processedPidData.substring(0, 100));
+      
+    } catch (err) {
+      console.warn("⚠️ Could not parse PID XML:", err);
+      processedPidData = pidData; // Fallback to original
+    }
+
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
       lat: latitude,
       long: longitude,
       aadhaar_number: aadharNumber,
-      pid_data: pidData, // ✅ Send as XML string
+      pid_data: processedPidData,
       is_iris: 2,
     };
 
@@ -480,8 +523,9 @@ export default function DmtPage() {
       lat: latitude,
       long: longitude,
       aadhaar_number: aadharNumber,
-      pid_data_length: pidData.length,
-      pid_data_preview: pidData.substring(0, 100),
+      pid_data_format: pidDataFormat,
+      pid_data_length: processedPidData.length,
+      pid_data_preview: processedPidData.substring(0, 100),
       is_iris: 2,
     });
 
@@ -504,7 +548,6 @@ export default function DmtPage() {
       const createRes = res.data?.data?.response;
       console.log("📊 Response data:", createRes);
 
-      // Step 4: Check response error code
       if (createRes?.error !== 0) {
         console.error("❌ API returned error:", {
           error: createRes?.error,
@@ -520,14 +563,8 @@ export default function DmtPage() {
         return;
       }
 
-      // Step 5: Success
       console.log("✅ Wallet creation successful!");
-      console.log("Account created:", createRes?.AccountExists);
-      console.log("Message:", createRes?.msg);
-      
       toast({ title: "OTP Sent", description: "Check your mobile" });
-      
-      console.log("🔄 Moving to OTP verification step");
       setStep(Step.OTP_VERIFY);
       
     } catch (err: any) {
@@ -538,22 +575,10 @@ export default function DmtPage() {
       if (err.response) {
         console.error("❌ HTTP Error Response:");
         console.error("Status:", err.response.status);
-        console.error("Status text:", err.response.statusText);
-        console.error("Headers:", err.response.headers);
         console.error("Data:", JSON.stringify(err.response.data, null, 2));
-      } else if (err.request) {
-        console.error("❌ No response received:");
-        console.error("Request:", err.request);
-      } else {
-        console.error("❌ Request setup error:", err.message);
       }
       
-      console.error("Full error object:", err);
-      console.error("Error stack:", err.stack);
-      
       const msg = err.response?.data?.message || err.message || "Error";
-      console.error("Error message to display:", msg);
-      
       setError(msg);
       toast({ title: "Error", description: msg, variant: "destructive" });
       
@@ -561,7 +586,7 @@ export default function DmtPage() {
       setLoading(false);
       console.log("=== CREATE WALLET END ===");
     }
-  }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, pidData, toast]);
+  }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, pidData, pidDataFormat, toast]);
 
   const handleVerifySubmit = useCallback(async () => {
     clearError();
@@ -768,6 +793,24 @@ export default function DmtPage() {
             <p className="text-xs text-amber-600">⚠️ RD Service not detected. Ensure service is running.</p>
           )}
         </div>
+      </div>
+
+      {/* PID Data Format Selector */}
+      <div className="space-y-1 bg-blue-50 border border-blue-200 rounded-md p-3">
+        <Label htmlFor="pid-format" className="text-blue-900">PID Data Format (Testing)</Label>
+        <select
+          id="pid-format"
+          value={pidDataFormat}
+          onChange={(e) => setPidDataFormat(e.target.value as PidDataFormat)}
+          className="flex h-10 w-full rounded-md border border-blue-300 bg-white px-3 py-2 text-sm"
+        >
+          {PID_FORMAT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <p className="text-xs text-blue-700 mt-1">
+          {PID_FORMAT_OPTIONS.find(o => o.value === pidDataFormat)?.description}
+        </p>
       </div>
 
       <div className="space-y-2">
