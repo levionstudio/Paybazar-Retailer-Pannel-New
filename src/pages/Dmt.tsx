@@ -394,12 +394,7 @@ export default function DmtPage() {
 
     clearError();
     setLoading(true);
-function toBase64(str: string): string {
-  const bytes = new TextEncoder().encode(str);
-  let binary = "";
-  bytes.forEach((b) => (binary += String.fromCharCode(b)));
-  return btoa(binary);
-}
+
 
     // Step 3: Prepare request payload
     const requestPayload = {
@@ -408,7 +403,7 @@ function toBase64(str: string): string {
       lat: latitude,
       long: longitude,
       aadhaar_number: aadharNumber,
-      pid_data: toBase64(pidData),
+      pid_data: pidData,
       is_iris: 2,
     };
 
@@ -419,7 +414,7 @@ function toBase64(str: string): string {
       lat: latitude,
       long: longitude,
       aadhar_number: aadharNumber,
-      pid_data: toBase64(pidData),
+      pid_data: pidData,
       is_iris: 2,
     });
 
