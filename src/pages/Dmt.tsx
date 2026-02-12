@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import axios from "axios";
 import { jwtDecode, JwtPayload } from "jwt-decode";
+import { XMLParser } from "fast-xml-parser";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -78,16 +79,6 @@ const DEVICE_OPTIONS: { value: BiometricDevice; label: string }[] = [
   { value: "morpho", label: "Morpho (MSO 1300 E2 / E3)" },
 ];
 
-// ✅ MATCHING PHP: Exact same PID options format
-const getPidOptions = (device: BiometricDevice): string => {
-  if (device === "morpho") {
-    return '<PidOptions ver="1.0"><Opts env="P" fCount="1" fType="2" iCount="0" pCount="0" pgCount="2" format="0" pidVer="2.0" timeout="15000" posh="UNKNOWN" /></PidOptions>';
-  } else {
-    // mantra
-    return '<PidOptions ver="1.0"><Opts fCount="1" fType="2" iCount="0" pCount="0" pgCount="2" format="0" pidVer="2.0" timeout="10000" pTimeout="20000" posh="UNKNOWN" env="P" /><CustOpts><Param name="mantrakey" value="" /></CustOpts></PidOptions>';
-  }
-};
-
 const getDeviceUrl = (device: BiometricDevice): string => {
   if (device === "morpho") {
     return "https://localhost:11100/capture";
@@ -97,68 +88,84 @@ const getDeviceUrl = (device: BiometricDevice): string => {
   }
 };
 
-// ✅ MATCHING PHP: XHR call exactly like PHP code
-function captureWithXHR(url: string, pidOpts: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    
-    xhr.open('CAPTURE', url, true);
-    xhr.setRequestHeader("Content-Type", "text/xml");
-    xhr.setRequestHeader("Accept", "text/xml");
-    xhr.timeout = 15000;
-
-    xhr.onerror = function (e) {
-      reject(new Error("Driver not supported or installed"));
-    };
-
-    xhr.ontimeout = function () {
-      reject(new Error("Request timeout"));
-    };
-
-    xhr.onreadystatechange = function () {
-      if (xhr.readyState === 4) {
-        if (xhr.status === 200) {
-          const responseText = xhr.responseText;
-          
-          if (responseText.includes('errCode')) {
-            // Extract errCode using regex (matching PHP)
-            const errCodeMatch = responseText.match(/errCode="(.*?)"/);
-            const errInfoMatch = responseText.match(/errInfo="(.*?)"/);
-            
-            if (errCodeMatch && errCodeMatch[1] !== '0') {
-              const errorMsg = errInfoMatch ? errInfoMatch[1] : "Unknown error";
-              reject(new Error(`Error capturing biometric data: ${errorMsg}`));
-            } else {
-              // Success - return full XML
-              resolve(responseText);
-            }
-          } else {
-            reject(new Error("Invalid response format"));
-          }
-        } else {
-          reject(new Error(`HTTP ${xhr.status}`));
-        }
-      }
-    };
-
-    xhr.send(pidOpts);
-  });
-}
-
+// ✅ Capture fingerprint - exactly as you specified
 async function captureFingerprint(device: BiometricDevice): Promise<string> {
-  const url = getDeviceUrl(device);
-  const pidOpts = getPidOptions(device);
+  const captureUrl = getDeviceUrl(device);
   
-  console.log(`[Bio] Capturing from: ${url}`);
-  console.log(`[Bio] PID Options:`, pidOpts);
+  // ✅ Exact PID Options format you provided
+  const captureXML = `<PidOptions ver="1.0">
+    <Opts fCount="1" fType="2" pCount="0" format="0" pidVer="2.0" timeout="20000" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" />
+</PidOptions>`;
+  
+  console.log(`[Bio] Capturing from: ${captureUrl}`);
+  console.log(`[Bio] PID Options:`, captureXML);
 
   try {
-    const responseXML = await captureWithXHR(url, pidOpts);
+    // ✅ Exact fetch pattern you provided
+    const response = await fetch(captureUrl, {
+      method: "CAPTURE",
+      headers: { "Content-Type": "application/xml" },
+      body: captureXML
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    // ✅ Get XML text response
+    const xmlText = await response.text();
+    console.log("[Bio] Response received, length:", xmlText.length);
+
+    // ✅ Exact parser setup you provided
+    const parser = new XMLParser({
+      ignoreAttributes: false,
+      attributeNamePrefix: "",
+    });
+    
+    // ✅ Parse and extract PidData - exactly as you specified
+    const parsed = parser.parse(xmlText);
+    const pid = parsed.PidData;
+    
+    console.log("[Bio] Parsed PidData:", pid);
+
+    // Validate response
+    if (!pid) {
+      throw new Error("Invalid response - PidData not found");
+    }
+
+    // Check for errors
+    if (pid.Resp && pid.Resp.errCode && pid.Resp.errCode !== "0") {
+      const errInfo = pid.Resp.errInfo || "Unknown error";
+      throw new Error(`Biometric error: ${errInfo}`);
+    }
+
+    // ✅ Extract ONLY the Data field content (the base64 encrypted string)
+    // The Data field structure is: { type: "X", "#text": "MjAyNi0wMi0xMlQxNTo..." }
+    const dataContent = pid.Data?.["#text"] || pid.Data;
+    
+    if (!dataContent || typeof dataContent !== "string") {
+      throw new Error("Invalid response - Data field not found");
+    }
+    
     console.log("[Bio] ✓ Capture Successful");
-    console.log("[Bio] Response length:", responseXML.length);
-    return responseXML.trim();
+    console.log("[Bio] errCode:", pid.Resp?.errCode);
+    console.log("[Bio] errInfo:", pid.Resp?.errInfo);
+    console.log("[Bio] Quality Score:", pid.Resp?.qScore);
+    console.log("[Bio] Data length:", dataContent.length, "chars");
+    console.log("[Bio] Data preview:", dataContent.substring(0, 80) + "...");
+    
+    // ✅ Return ONLY the Data field content (base64 string)
+    // This matches API format: "pid_data": "EtHinpi0gNCGs0ndcmAx3rNEH8KadpCXbP..."
+    return dataContent;
+    
   } catch (err: any) {
     console.error("[Bio] ✗ Capture failed:", err.message);
+    
+    // Handle network errors
+    if (err.name === "TypeError" && err.message.includes("fetch")) {
+      throw new Error("Driver not supported or installed. Please ensure the biometric device driver is running.");
+    }
+    
     throw err;
   }
 }
@@ -208,7 +215,7 @@ export default function DmtPage() {
   const [stateResp, setStateResp] = useState("");
 
   const [selectedDevice, setSelectedDevice] = useState<BiometricDevice>("mantra");
-  const [pidData, setPidData] = useState("");
+  const [pidData, setPidData] = useState<string>(""); // Stores only Data field content (base64 string)
   const [capturing, setCapturing] = useState(false);
 
   const [latitude, setLatitude] = useState<number | null>(null);
@@ -319,18 +326,18 @@ export default function DmtPage() {
       console.log("=== BIOMETRIC CAPTURE START ===");
       console.log("Device:", selectedDevice);
 
-      // ✅ MATCHING PHP: Capture exactly like PHP code
-      const pidXML = await captureFingerprint(selectedDevice);
+      // ✅ Capture and extract Data field content (base64 string)
+      const dataContent = await captureFingerprint(selectedDevice);
 
-      if (!pidXML) {
+      if (!dataContent) {
         throw new Error("Failed to capture PID data");
       }
 
-      // ✅ Store complete XML (matching PHP organization_fullData field)
-      setPidData(pidXML);
+      // ✅ Store only the Data field content (base64 encrypted string)
+      setPidData(dataContent);
 
-      console.log("✅ PID captured successfully");
-      console.log("Size:", (pidXML.length / 1024).toFixed(2), "KB");
+      console.log("✅ Data field extracted successfully");
+      console.log("Data length:", dataContent.length, "characters");
       console.log("=== BIOMETRIC CAPTURE END ===");
 
       toast({
@@ -376,14 +383,15 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    // ✅ MATCHING PHP: Send complete PID XML as-is (organization_fullData)
+    // ✅ Send ONLY the Data field content (base64 encrypted string)
+    // Matches API format: "pid_data": "EtHinpi0gNCGs0ndcmAx3rNEH8KadpCXbP..."
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
-      lat: latitude,
-      long: longitude,
+      lat: latitude.toString(),
+      long: longitude.toString(),
       aadhaar_number: aadharNumber,
-      pid_data: pidData, // Complete XML string from device
+      pid_data: pidData, // ✅ Just the base64 string from <Data> field
       is_iris: 2,
     };
 
@@ -393,9 +401,9 @@ export default function DmtPage() {
     console.log("  Mobile:", mobileNumber);
     console.log("  Aadhaar:", aadharNumber);
     console.log("  Location:", { lat: latitude, long: longitude });
-    console.log("  PID Size:", (pidData.length / 1024).toFixed(2), "KB");
+    console.log("  PID Data length:", pidData.length, "chars");
+    console.log("  PID Data preview:", pidData.substring(0, 80) + "...");
     console.log("  is_iris:", 2);
-    console.log("  PID Preview:", pidData.substring(0, 150));
 
     try {
       const startTime = Date.now();
@@ -656,7 +664,7 @@ export default function DmtPage() {
         {pidData && (
           <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2">
             <CheckCircle className="w-4 h-4" />
-            PID captured ({(pidData.length / 1024).toFixed(1)} KB)
+            PID captured ({pidData.length} chars)
           </div>
         )}
       </div>
