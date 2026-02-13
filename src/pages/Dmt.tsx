@@ -419,11 +419,11 @@ export default function DmtPage() {
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
-      lat: latitude,
-      long: longitude,
       aadhaar_number: aadharNumber,
+      is_iris: 2,
       pid_data: biometricData.data, // ✅ COMPLETE Data field (full base64 string from <Data> tag)
-      is_iris: 1,
+      lat: latitude.toString(), // Convert to string
+      long: longitude.toString(), // Convert to string
     };
 
     console.log("📤 API Request:");
@@ -431,7 +431,7 @@ export default function DmtPage() {
     console.log("  Retailer ID:", retailerId);
     console.log("  Mobile:", mobileNumber);
     console.log("  Aadhaar:", aadharNumber);
-    console.log("  Location:", { lat: latitude, long: longitude });
+    console.log("  Location:", { lat: latitude.toString(), long: longitude.toString() });
     console.log("  ✅ PID Data (COMPLETE Data field):");
     console.log("    - Total length:", biometricData.data.length, "chars");
     console.log("    - First 100 chars:", biometricData.data.substring(0, 100) + "...");
