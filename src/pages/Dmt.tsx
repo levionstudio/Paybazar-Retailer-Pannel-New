@@ -90,9 +90,9 @@ const getDeviceUrl = (device: BiometricDevice): string => {
 
 interface BiometricData {
   pidData: string;      // Full PidData XML
-  sessionKey: string;   // Skey field
-  hmac: string;         // Hmac field
-  data: string;         // Data field (base64 encrypted biometric)
+  sessionKey: string;   // Skey field (base64)
+  hmac: string;         // Hmac field (base64)
+  data: string;         // Data field (complete base64 encrypted biometric)
   deviceInfo: any;      // DeviceInfo object
 }
 
@@ -152,31 +152,36 @@ async function captureFingerprint(device: BiometricDevice, wadh: string = "E0jzJ
     console.log("[Bio] Quality Score:", pid.Resp?.qScore);
     console.log("[Bio] Minutiae Points:", pid.Resp?.nmPoints);
     
-    // ✅ Extract the Data field content (base64 encrypted biometric string)
-    // The Data field structure can be: { type: "X", "#text": "base64string" } or just "base64string"
+    // ✅ Extract the COMPLETE Data field content (base64 encrypted biometric string)
+    // The Data field in XML is: <Data type="X">LONG_BASE64_STRING</Data>
+    // Parser gives us: { type: "X", "#text": "LONG_BASE64_STRING" } or just "LONG_BASE64_STRING"
     const dataContent = pid.Data?.["#text"] || pid.Data;
     
     if (!dataContent || typeof dataContent !== "string") {
       throw new Error("Invalid response - Data field not found");
     }
     
-    // ✅ Extract session key (Skey)
+    // ✅ Extract session key (Skey) - get the actual base64 content
+    // Example: <Skey ci="20280813">BASE64_SESSION_KEY</Skey>
     const sessionKey = pid.Skey?.["#text"] || pid.Skey || "";
     
-    // ✅ Extract HMAC
+    // ✅ Extract HMAC - get the actual base64 content
+    // Example: <Hmac>BASE64_HMAC</Hmac>
     const hmac = pid.Hmac?.["#text"] || pid.Hmac || "";
     
-    console.log("[Bio] Data field length:", dataContent.length, "chars");
-    console.log("[Bio] Data preview:", dataContent.substring(0, 80) + "...");
-    console.log("[Bio] Session Key length:", sessionKey.length, "chars");
-    console.log("[Bio] HMAC length:", hmac.length, "chars");
+    console.log("[Bio] ✓ Data extracted successfully:");
+    console.log("[Bio] - Data field length:", dataContent.length, "chars");
+    console.log("[Bio] - Data preview:", dataContent.substring(0, 100) + "...");
+    console.log("[Bio] - Data ending:", "..." + dataContent.substring(dataContent.length - 50));
+    console.log("[Bio] - Session Key length:", sessionKey.length, "chars");
+    console.log("[Bio] - HMAC length:", hmac.length, "chars");
     
-    // ✅ Return biometric data object
+    // ✅ Return biometric data object with COMPLETE data
     const biometricData: BiometricData = {
       pidData: xmlText,           // Full XML for reference
-      sessionKey: sessionKey,     // Session key
-      hmac: hmac,                 // HMAC
-      data: dataContent,          // Data field (this is what you send to API)
+      sessionKey: sessionKey,     // Session key (base64)
+      hmac: hmac,                 // HMAC (base64)
+      data: dataContent,          // COMPLETE Data field - full base64 encrypted biometric data
       deviceInfo: pid.DeviceInfo  // Device info
     };
     
@@ -363,7 +368,7 @@ export default function DmtPage() {
       setBiometricData(bioData);
 
       console.log("✅ Biometric data captured successfully");
-      console.log("Data field length:", bioData.data.length, "characters");
+      console.log("Complete Data field length:", bioData.data.length, "characters");
       console.log("Session Key length:", bioData.sessionKey.length, "characters");
       console.log("HMAC length:", bioData.hmac.length, "characters");
       console.log("=== BIOMETRIC CAPTURE END ===");
@@ -411,15 +416,15 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    // ✅ Send ONLY the Data field (base64 encrypted biometric string) to backend
-    // This is the encrypted biometric template that will be sent to UIDAI
+    // ✅ Send COMPLETE Data field (the full base64 encrypted biometric string) to backend
+    // This is the complete encrypted biometric template that will be sent to UIDAI
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
       lat: latitude,
       long: longitude,
       aadhaar_number: aadharNumber,
-      pid_data: biometricData.data, // ✅ Only the Data field (base64 string)
+      pid_data: biometricData.data, // ✅ COMPLETE Data field (full base64 string from <Data> tag)
       is_iris: 2,
     };
 
@@ -429,8 +434,10 @@ export default function DmtPage() {
     console.log("  Mobile:", mobileNumber);
     console.log("  Aadhaar:", aadharNumber);
     console.log("  Location:", { lat: latitude, long: longitude });
-    console.log("  PID Data (Data field) length:", biometricData.data.length, "chars");
-    console.log("  PID Data preview:", biometricData.data.substring(0, 80) + "...");
+    console.log("  ✅ PID Data (COMPLETE Data field):");
+    console.log("    - Total length:", biometricData.data.length, "chars");
+    console.log("    - First 100 chars:", biometricData.data.substring(0, 100) + "...");
+    console.log("    - Last 50 chars:", "..." + biometricData.data.substring(biometricData.data.length - 50));
     console.log("  Session Key available:", biometricData.sessionKey.length > 0);
     console.log("  HMAC available:", biometricData.hmac.length > 0);
     console.log("  is_iris:", 2);
