@@ -97,7 +97,7 @@ interface BiometricData {
 }
 
 // ✅ Capture fingerprint - returns biometric data object
-async function captureFingerprint(device: BiometricDevice, wadh: string = ""): Promise<BiometricData> {
+async function captureFingerprint(device: BiometricDevice, wadh: string = "E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc"): Promise<BiometricData> {
   const captureUrl = getDeviceUrl(device);
   
   // ✅ Standard PID Options format with wadh
