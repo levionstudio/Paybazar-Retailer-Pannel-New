@@ -423,7 +423,7 @@ export default function DmtPage() {
       long: longitude,
       aadhaar_number: aadharNumber,
       pid_data: biometricData.data, // ✅ COMPLETE Data field (full base64 string from <Data> tag)
-      is_iris: 2,
+      is_iris: 1,
     };
 
     console.log("📤 API Request:");
