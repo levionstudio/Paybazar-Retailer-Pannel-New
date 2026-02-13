@@ -90,19 +90,19 @@ const getDeviceUrl = (device: BiometricDevice): string => {
 
 interface BiometricData {
   pidData: string;      // Full PidData XML
-  sessionKey: string;   // Skey field (base64)
-  hmac: string;         // Hmac field (base64)
-  data: string;         // Data field (complete base64 encrypted biometric)
+  sessionKey: string;   // Skey field
+  hmac: string;         // Hmac field
+  data: string;         // Data field (base64 encrypted biometric)
   deviceInfo: any;      // DeviceInfo object
 }
 
 // ✅ Capture fingerprint - returns biometric data object
-async function captureFingerprint(device: BiometricDevice): Promise<BiometricData> {
+async function captureFingerprint(device: BiometricDevice, wadh: string = ""): Promise<BiometricData> {
   const captureUrl = getDeviceUrl(device);
   
-  // ✅ Standard PID Options format without wadh
+  // ✅ Standard PID Options format with wadh
   const captureXML = `<PidOptions ver="1.0">
-    <Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" otp="" wadh="" posh=""/>
+    <Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" otp="" wadh="${wadh}" posh=""/>
 </PidOptions>`;
   
   console.log(`[Bio] Capturing from: ${captureUrl}`);
@@ -152,36 +152,31 @@ async function captureFingerprint(device: BiometricDevice): Promise<BiometricDat
     console.log("[Bio] Quality Score:", pid.Resp?.qScore);
     console.log("[Bio] Minutiae Points:", pid.Resp?.nmPoints);
     
-    // ✅ Extract the COMPLETE Data field content (base64 encrypted biometric string)
-    // The Data field in XML is: <Data type="X">LONG_BASE64_STRING</Data>
-    // Parser gives us: { type: "X", "#text": "LONG_BASE64_STRING" } or just "LONG_BASE64_STRING"
+    // ✅ Extract the Data field content (base64 encrypted biometric string)
+    // The Data field structure can be: { type: "X", "#text": "base64string" } or just "base64string"
     const dataContent = pid.Data?.["#text"] || pid.Data;
     
     if (!dataContent || typeof dataContent !== "string") {
       throw new Error("Invalid response - Data field not found");
     }
     
-    // ✅ Extract session key (Skey) - get the actual base64 content
-    // Example: <Skey ci="20280813">BASE64_SESSION_KEY</Skey>
+    // ✅ Extract session key (Skey)
     const sessionKey = pid.Skey?.["#text"] || pid.Skey || "";
     
-    // ✅ Extract HMAC - get the actual base64 content
-    // Example: <Hmac>BASE64_HMAC</Hmac>
+    // ✅ Extract HMAC
     const hmac = pid.Hmac?.["#text"] || pid.Hmac || "";
     
-    console.log("[Bio] ✓ Data extracted successfully:");
-    console.log("[Bio] - Data field length:", dataContent.length, "chars");
-    console.log("[Bio] - Data preview:", dataContent.substring(0, 100) + "...");
-    console.log("[Bio] - Data ending:", "..." + dataContent.substring(dataContent.length - 50));
-    console.log("[Bio] - Session Key length:", sessionKey.length, "chars");
-    console.log("[Bio] - HMAC length:", hmac.length, "chars");
+    console.log("[Bio] Data field length:", dataContent.length, "chars");
+    console.log("[Bio] Data preview:", dataContent.substring(0, 80) + "...");
+    console.log("[Bio] Session Key length:", sessionKey.length, "chars");
+    console.log("[Bio] HMAC length:", hmac.length, "chars");
     
-    // ✅ Return biometric data object with COMPLETE data
+    // ✅ Return biometric data object
     const biometricData: BiometricData = {
       pidData: xmlText,           // Full XML for reference
-      sessionKey: sessionKey,     // Session key (base64)
-      hmac: hmac,                 // HMAC (base64)
-      data: dataContent,          // COMPLETE Data field - full base64 encrypted biometric data
+      sessionKey: sessionKey,     // Session key
+      hmac: hmac,                 // HMAC
+      data: dataContent,          // Data field (this is what you send to API)
       deviceInfo: pid.DeviceInfo  // Device info
     };
     
@@ -199,14 +194,17 @@ async function captureFingerprint(device: BiometricDevice): Promise<BiometricDat
   }
 }
 
-function requestGeolocation(): Promise<{ lat: number; lng: number }> {
+function requestGeolocation(): Promise<{ lat: string; lng: string }> {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error("Geolocation not supported"));
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (pos) => resolve({ 
+        lat: pos.coords.latitude.toString(), 
+        lng: pos.coords.longitude.toString() 
+      }),
       (err) => {
         if (err.code === err.PERMISSION_DENIED) {
           reject(new Error("Location permission denied. Please allow location and refresh."));
@@ -247,8 +245,8 @@ export default function DmtPage() {
   const [biometricData, setBiometricData] = useState<BiometricData | null>(null);
   const [capturing, setCapturing] = useState(false);
 
-  const [latitude, setLatitude] = useState<number | null>(null);
-  const [longitude, setLongitude] = useState<number | null>(null);
+  const [latitude, setLatitude] = useState<string | null>(null);
+  const [longitude, setLongitude] = useState<string | null>(null);
   const [locationStatus, setLocationStatus] = useState<"pending" | "fetching" | "success" | "error">("pending");
   const [locationError, setLocationError] = useState<string | null>(null);
   const locationRequested = useRef(false);
@@ -283,7 +281,7 @@ export default function DmtPage() {
           setLatitude(coords.lat);
           setLongitude(coords.lng);
           setLocationStatus("success");
-          toast({ title: "Location Captured", description: `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` });
+          toast({ title: "Location Captured", description: `${parseFloat(coords.lat).toFixed(4)}, ${parseFloat(coords.lng).toFixed(4)}` });
         })
         .catch((err: Error) => {
           setLocationStatus("error");
@@ -303,7 +301,7 @@ export default function DmtPage() {
       setLatitude(coords.lat);
       setLongitude(coords.lng);
       setLocationStatus("success");
-      toast({ title: "Location Captured", description: `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` });
+      toast({ title: "Location Captured", description: `${parseFloat(coords.lat).toFixed(4)}, ${parseFloat(coords.lng).toFixed(4)}` });
     } catch (err: any) {
       setLocationStatus("error");
       setLocationError(err.message);
@@ -323,12 +321,21 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
+    const requestPayload = { mobile_no: mobileNumber };
+
+    console.log("=== CHECK WALLET API CALL ===");
+    console.log("Endpoint:", `${API_BASE_URL}/dmt/check/wallet`);
+    console.log("Request Payload:", JSON.stringify(requestPayload, null, 2));
+
     try {
       const res = await axios.post<CheckWalletResponse>(
         `${API_BASE_URL}/dmt/check/wallet`,
-        { mobile_no: mobileNumber },
+        requestPayload,
         getAuthHeaders()
       );
+      
+      console.log("✅ Check Wallet Response:", JSON.stringify(res.data, null, 2));
+      
       const checkRes = res.data?.data?.response;
 
       if (checkRes?.AccountExists === 1) {
@@ -339,9 +346,41 @@ export default function DmtPage() {
 
       setStep(Step.AADHAAR_BIOMETRIC);
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.message || "Error";
-      setError(msg);
-      toast({ title: "Error", description: msg, variant: "destructive" });
+      console.error("=== CHECK WALLET ERROR ===");
+      
+      if (err.response) {
+        console.error("HTTP Status:", err.response.status);
+        console.error("Response Headers:", err.response.headers);
+        console.error("Response Data:", err.response.data);
+        
+        // Handle different response types
+        let errorMessage = "Error checking wallet";
+        
+        if (typeof err.response.data === 'string') {
+          // Server returned plain text error
+          errorMessage = err.response.data;
+        } else if (err.response.data?.message) {
+          // Server returned JSON with message
+          errorMessage = err.response.data.message;
+        } else if (err.response.data?.error) {
+          // Server returned JSON with error
+          errorMessage = err.response.data.error;
+        }
+        
+        setError(errorMessage);
+        toast({ title: "Error", description: errorMessage, variant: "destructive" });
+      } else if (err.request) {
+        console.error("No response received");
+        console.error("Request:", err.request);
+        const msg = "No response from server. Please check your connection.";
+        setError(msg);
+        toast({ title: "Network Error", description: msg, variant: "destructive" });
+      } else {
+        console.error("Request setup error:", err.message);
+        const msg = err.message || "Error checking wallet";
+        setError(msg);
+        toast({ title: "Error", description: msg, variant: "destructive" });
+      }
     } finally {
       setLoading(false);
     }
@@ -355,8 +394,10 @@ export default function DmtPage() {
       console.log("=== BIOMETRIC CAPTURE START ===");
       console.log("Device:", selectedDevice);
 
-      // ✅ Capture biometric data without wadh parameter
-      const bioData = await captureFingerprint(selectedDevice);
+      // ✅ Capture biometric data with wadh parameter
+      // You can get wadh from your configuration or leave empty
+      const wadh = ""; // Add your wadh value here if needed
+      const bioData = await captureFingerprint(selectedDevice, wadh);
 
       if (!bioData || !bioData.data) {
         throw new Error("Failed to capture biometric data");
@@ -366,7 +407,7 @@ export default function DmtPage() {
       setBiometricData(bioData);
 
       console.log("✅ Biometric data captured successfully");
-      console.log("Complete Data field length:", bioData.data.length, "characters");
+      console.log("Data field length:", bioData.data.length, "characters");
       console.log("Session Key length:", bioData.sessionKey.length, "characters");
       console.log("HMAC length:", bioData.hmac.length, "characters");
       console.log("=== BIOMETRIC CAPTURE END ===");
@@ -414,16 +455,16 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    // ✅ Send COMPLETE Data field (the full base64 encrypted biometric string) to backend
-    // This is the complete encrypted biometric template that will be sent to UIDAI
+    // ✅ Send ONLY the Data field (base64 encrypted biometric string) to backend
+    // This is the encrypted biometric template that will be sent to UIDAI
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
+      lat: latitude,
+      long: longitude,
       aadhaar_number: aadharNumber,
+      pid_data: biometricData.data, // ✅ Only the Data field (base64 string)
       is_iris: 2,
-      pid_data: biometricData.data, // ✅ COMPLETE Data field (full base64 string from <Data> tag)
-      lat: latitude.toString(), // Convert to string
-      long: longitude.toString(), // Convert to string
     };
 
     console.log("📤 API Request:");
@@ -431,11 +472,10 @@ export default function DmtPage() {
     console.log("  Retailer ID:", retailerId);
     console.log("  Mobile:", mobileNumber);
     console.log("  Aadhaar:", aadharNumber);
-    console.log("  Location:", { lat: latitude.toString(), long: longitude.toString() });
-    console.log("  ✅ PID Data (COMPLETE Data field):");
-    console.log("    - Total length:", biometricData.data.length, "chars");
-    console.log("    - First 100 chars:", biometricData.data.substring(0, 100) + "...");
-    console.log("    - Last 50 chars:", "..." + biometricData.data.substring(biometricData.data.length - 50));
+    console.log("  Location (lat):", latitude, "(string)");
+    console.log("  Location (long):", longitude, "(string)");
+    console.log("  PID Data (Data field) length:", biometricData.data.length, "chars");
+    console.log("  PID Data preview:", biometricData.data.substring(0, 80) + "...");
     console.log("  Session Key available:", biometricData.sessionKey.length > 0);
     console.log("  HMAC available:", biometricData.hmac.length > 0);
     console.log("  is_iris:", 2);
@@ -572,7 +612,7 @@ export default function DmtPage() {
       return (
         <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2 mb-4">
           <MapPin className="w-4 h-4 shrink-0" />
-          Location: {latitude.toFixed(4)}, {longitude.toFixed(4)}
+          Location: {parseFloat(latitude).toFixed(4)}, {parseFloat(longitude).toFixed(4)}
         </div>
       );
     }
