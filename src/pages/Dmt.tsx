@@ -88,20 +88,28 @@ const getDeviceUrl = (device: BiometricDevice): string => {
   }
 };
 
-// ✅ Capture fingerprint - exactly as you specified
-async function captureFingerprint(device: BiometricDevice): Promise<string> {
+interface BiometricData {
+  pidData: string;      // Full PidData XML
+  sessionKey: string;   // Skey field
+  hmac: string;         // Hmac field
+  data: string;         // Data field (base64 encrypted biometric)
+  deviceInfo: any;      // DeviceInfo object
+}
+
+// ✅ Capture fingerprint - returns biometric data object
+async function captureFingerprint(device: BiometricDevice, wadh: string = ""): Promise<BiometricData> {
   const captureUrl = getDeviceUrl(device);
   
-  // ✅ Exact PID Options format you provided
+  // ✅ Standard PID Options format with wadh
   const captureXML = `<PidOptions ver="1.0">
-    <Opts fCount="1" fType="2" pCount="0" format="0" pidVer="2.0" timeout="20000" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" />
+    <Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" otp="" wadh="${wadh}" posh=""/>
 </PidOptions>`;
   
   console.log(`[Bio] Capturing from: ${captureUrl}`);
   console.log(`[Bio] PID Options:`, captureXML);
 
   try {
-    // ✅ Exact fetch pattern you provided
+    // ✅ Fetch biometric data
     const response = await fetch(captureUrl, {
       method: "CAPTURE",
       headers: { "Content-Type": "application/xml" },
@@ -112,17 +120,16 @@ async function captureFingerprint(device: BiometricDevice): Promise<string> {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    // ✅ Get XML text response
+    // ✅ Get entire XML text response
     const xmlText = await response.text();
     console.log("[Bio] Response received, length:", xmlText.length);
 
-    // ✅ Exact parser setup you provided
+    // ✅ Parse XML to validate and extract data
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "",
     });
     
-    // ✅ Parse and extract PidData - exactly as you specified
     const parsed = parser.parse(xmlText);
     const pid = parsed.PidData;
     
@@ -139,24 +146,41 @@ async function captureFingerprint(device: BiometricDevice): Promise<string> {
       throw new Error(`Biometric error: ${errInfo}`);
     }
 
-    // ✅ Extract ONLY the Data field content (the base64 encrypted string)
-    // The Data field structure is: { type: "X", "#text": "MjAyNi0wMi0xMlQxNTo..." }
+    console.log("[Bio] ✓ Capture Successful");
+    console.log("[Bio] errCode:", pid.Resp?.errCode);
+    console.log("[Bio] errInfo:", pid.Resp?.errInfo);
+    console.log("[Bio] Quality Score:", pid.Resp?.qScore);
+    console.log("[Bio] Minutiae Points:", pid.Resp?.nmPoints);
+    
+    // ✅ Extract the Data field content (base64 encrypted biometric string)
+    // The Data field structure can be: { type: "X", "#text": "base64string" } or just "base64string"
     const dataContent = pid.Data?.["#text"] || pid.Data;
     
     if (!dataContent || typeof dataContent !== "string") {
       throw new Error("Invalid response - Data field not found");
     }
     
-    console.log("[Bio] ✓ Capture Successful");
-    console.log("[Bio] errCode:", pid.Resp?.errCode);
-    console.log("[Bio] errInfo:", pid.Resp?.errInfo);
-    console.log("[Bio] Quality Score:", pid.Resp?.qScore);
-    console.log("[Bio] Data length:", dataContent.length, "chars");
-    console.log("[Bio] Data preview:", dataContent.substring(0, 80) + "...");
+    // ✅ Extract session key (Skey)
+    const sessionKey = pid.Skey?.["#text"] || pid.Skey || "";
     
-    // ✅ Return ONLY the Data field content (base64 string)
-    // This matches API format: "pid_data": "EtHinpi0gNCGs0ndcmAx3rNEH8KadpCXbP..."
-    return dataContent;
+    // ✅ Extract HMAC
+    const hmac = pid.Hmac?.["#text"] || pid.Hmac || "";
+    
+    console.log("[Bio] Data field length:", dataContent.length, "chars");
+    console.log("[Bio] Data preview:", dataContent.substring(0, 80) + "...");
+    console.log("[Bio] Session Key length:", sessionKey.length, "chars");
+    console.log("[Bio] HMAC length:", hmac.length, "chars");
+    
+    // ✅ Return biometric data object
+    const biometricData: BiometricData = {
+      pidData: xmlText,           // Full XML for reference
+      sessionKey: sessionKey,     // Session key
+      hmac: hmac,                 // HMAC
+      data: dataContent,          // Data field (this is what you send to API)
+      deviceInfo: pid.DeviceInfo  // Device info
+    };
+    
+    return biometricData;
     
   } catch (err: any) {
     console.error("[Bio] ✗ Capture failed:", err.message);
@@ -215,7 +239,7 @@ export default function DmtPage() {
   const [stateResp, setStateResp] = useState("");
 
   const [selectedDevice, setSelectedDevice] = useState<BiometricDevice>("mantra");
-  const [pidData, setPidData] = useState<string>(""); // Stores only Data field content (base64 string)
+  const [biometricData, setBiometricData] = useState<BiometricData | null>(null);
   const [capturing, setCapturing] = useState(false);
 
   const [latitude, setLatitude] = useState<number | null>(null);
@@ -326,18 +350,22 @@ export default function DmtPage() {
       console.log("=== BIOMETRIC CAPTURE START ===");
       console.log("Device:", selectedDevice);
 
-      // ✅ Capture and extract Data field content (base64 string)
-      const dataContent = await captureFingerprint(selectedDevice);
+      // ✅ Capture biometric data with wadh parameter
+      // You can get wadh from your configuration or leave empty
+      const wadh = ""; // Add your wadh value here if needed
+      const bioData = await captureFingerprint(selectedDevice, wadh);
 
-      if (!dataContent) {
-        throw new Error("Failed to capture PID data");
+      if (!bioData || !bioData.data) {
+        throw new Error("Failed to capture biometric data");
       }
 
-      // ✅ Store only the Data field content (base64 encrypted string)
-      setPidData(dataContent);
+      // ✅ Store the complete biometric data object
+      setBiometricData(bioData);
 
-      console.log("✅ Data field extracted successfully");
-      console.log("Data length:", dataContent.length, "characters");
+      console.log("✅ Biometric data captured successfully");
+      console.log("Data field length:", bioData.data.length, "characters");
+      console.log("Session Key length:", bioData.sessionKey.length, "characters");
+      console.log("HMAC length:", bioData.hmac.length, "characters");
       console.log("=== BIOMETRIC CAPTURE END ===");
 
       toast({
@@ -368,8 +396,8 @@ export default function DmtPage() {
     console.log("Timestamp:", new Date().toISOString());
     
     // Validation
-    if (!pidData) {
-      console.error("❌ No PID data");
+    if (!biometricData || !biometricData.data) {
+      console.error("❌ No biometric data");
       setError("Please capture fingerprint first");
       return;
     }
@@ -383,15 +411,15 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    // ✅ Send ONLY the Data field content (base64 encrypted string)
-    // Matches API format: "pid_data": "EtHinpi0gNCGs0ndcmAx3rNEH8KadpCXbP..."
+    // ✅ Send ONLY the Data field (base64 encrypted biometric string) to backend
+    // This is the encrypted biometric template that will be sent to UIDAI
     const requestPayload = {
       retailer_id: retailerId,
       mobile_no: mobileNumber,
       lat: latitude,
       long: longitude,
       aadhaar_number: aadharNumber,
-      pid_data: pidData, // ✅ Just the base64 string from <Data> field
+      pid_data: biometricData.data, // ✅ Only the Data field (base64 string)
       is_iris: 2,
     };
 
@@ -401,8 +429,10 @@ export default function DmtPage() {
     console.log("  Mobile:", mobileNumber);
     console.log("  Aadhaar:", aadharNumber);
     console.log("  Location:", { lat: latitude, long: longitude });
-    console.log("  PID Data length:", pidData.length, "chars");
-    console.log("  PID Data preview:", pidData.substring(0, 80) + "...");
+    console.log("  PID Data (Data field) length:", biometricData.data.length, "chars");
+    console.log("  PID Data preview:", biometricData.data.substring(0, 80) + "...");
+    console.log("  Session Key available:", biometricData.sessionKey.length > 0);
+    console.log("  HMAC available:", biometricData.hmac.length > 0);
     console.log("  is_iris:", 2);
 
     try {
@@ -453,7 +483,7 @@ export default function DmtPage() {
       setLoading(false);
       console.log("=== CREATE WALLET API CALL END ===");
     }
-  }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, pidData, toast]);
+  }, [retailerId, mobileNumber, latitude, longitude, aadharNumber, biometricData, toast]);
 
   const handleVerifySubmit = useCallback(async () => {
     clearError();
@@ -495,7 +525,7 @@ export default function DmtPage() {
   const handleGoToBeneficiary = useCallback(() => navigate("/dmt/beneficiary", { state: { mobileNumber } }), [navigate, mobileNumber]);
   const handleBackToStep1 = useCallback(() => {
     clearError();
-    setPidData("");
+    setBiometricData(null);
     setStep(Step.ENTER_MOBILE);
   }, []);
   const handleBackToBiometric = useCallback(() => {
@@ -654,17 +684,17 @@ export default function DmtPage() {
         >
           {capturing ? (
             <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Place finger…</span>
-          ) : pidData ? (
+          ) : biometricData ? (
             <span className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-400" /> Captured — Tap to Recapture</span>
           ) : (
             <span className="flex items-center gap-2"><Fingerprint className="w-4 h-4" /> Capture Fingerprint</span>
           )}
         </Button>
 
-        {pidData && (
+        {biometricData && (
           <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2">
             <CheckCircle className="w-4 h-4" />
-            PID captured ({pidData.length} chars)
+            Biometric data captured (Data: {biometricData.data.length} chars, Quality: {biometricData.deviceInfo?.Resp?.qScore || 'N/A'})
           </div>
         )}
       </div>
@@ -676,7 +706,7 @@ export default function DmtPage() {
         <Button
           type="button"
           onClick={handleCreateWallet}
-          disabled={loading || aadharNumber.length !== 12 || !pidData}
+          disabled={loading || aadharNumber.length !== 12 || !biometricData}
           className="flex-1 paybazaar-gradient text-white font-medium py-3"
         >
           {loading ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Creating…</span> : "Create Wallet"}
