@@ -89,27 +89,25 @@ const getDeviceUrl = (device: BiometricDevice): string => {
 };
 
 interface BiometricData {
-  pidData: string;      // Full PidData XML
-  sessionKey: string;   // Skey field
-  hmac: string;         // Hmac field
-  data: string;         // Data field (base64 encrypted biometric)
-  deviceInfo: any;      // DeviceInfo object
+  pidData: string;
+  sessionKey: string;
+  hmac: string;
+  data: string;
+  deviceInfo: any;
 }
 
-// ✅ Capture fingerprint - returns biometric data object
-async function captureFingerprint(device: BiometricDevice, wadh: string = ""): Promise<BiometricData> {
+async function captureFingerprint(device: BiometricDevice): Promise<BiometricData> {
   const captureUrl = getDeviceUrl(device);
   
-  // ✅ Standard PID Options format with wadh
-  const captureXML = `<PidOptions ver="1.0">
-    <Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" otp="" wadh="${wadh}" posh=""/>
-</PidOptions>`;
+const captureXML = `
+            <PidOptions ver="1.0">
+ <Opts fCount="1" fType="2" pCount="0" format="0" pidVer="2.0" timeout="20000" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" />
+            </PidOptions>
+            `;
   
   console.log(`[Bio] Capturing from: ${captureUrl}`);
-  console.log(`[Bio] PID Options:`, captureXML);
 
   try {
-    // ✅ Fetch biometric data
     const response = await fetch(captureUrl, {
       method: "CAPTURE",
       headers: { "Content-Type": "application/xml" },
@@ -120,11 +118,9 @@ async function captureFingerprint(device: BiometricDevice, wadh: string = ""): P
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    // ✅ Get entire XML text response
     const xmlText = await response.text();
     console.log("[Bio] Response received, length:", xmlText.length);
 
-    // ✅ Parse XML to validate and extract data
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "",
@@ -132,52 +128,37 @@ async function captureFingerprint(device: BiometricDevice, wadh: string = ""): P
     
     const parsed = parser.parse(xmlText);
     const pid = parsed.PidData;
-    
-    console.log("[Bio] Parsed PidData:", pid);
 
-    // Validate response
     if (!pid) {
       throw new Error("Invalid response - PidData not found");
     }
 
-    // Check for errors
     if (pid.Resp && pid.Resp.errCode && pid.Resp.errCode !== "0") {
       const errInfo = pid.Resp.errInfo || "Unknown error";
       throw new Error(`Biometric error: ${errInfo}`);
     }
 
     console.log("[Bio] ✓ Capture Successful");
-    console.log("[Bio] errCode:", pid.Resp?.errCode);
-    console.log("[Bio] errInfo:", pid.Resp?.errInfo);
     console.log("[Bio] Quality Score:", pid.Resp?.qScore);
     console.log("[Bio] Minutiae Points:", pid.Resp?.nmPoints);
     
-    // ✅ Extract the Data field content (base64 encrypted biometric string)
-    // The Data field structure can be: { type: "X", "#text": "base64string" } or just "base64string"
     const dataContent = pid.Data?.["#text"] || pid.Data;
     
     if (!dataContent || typeof dataContent !== "string") {
       throw new Error("Invalid response - Data field not found");
     }
     
-    // ✅ Extract session key (Skey)
     const sessionKey = pid.Skey?.["#text"] || pid.Skey || "";
-    
-    // ✅ Extract HMAC
     const hmac = pid.Hmac?.["#text"] || pid.Hmac || "";
     
     console.log("[Bio] Data field length:", dataContent.length, "chars");
-    console.log("[Bio] Data preview:", dataContent.substring(0, 80) + "...");
-    console.log("[Bio] Session Key length:", sessionKey.length, "chars");
-    console.log("[Bio] HMAC length:", hmac.length, "chars");
     
-    // ✅ Return biometric data object
     const biometricData: BiometricData = {
-      pidData: xmlText,           // Full XML for reference
-      sessionKey: sessionKey,     // Session key
-      hmac: hmac,                 // HMAC
-      data: dataContent,          // Data field (this is what you send to API)
-      deviceInfo: pid.DeviceInfo  // Device info
+      pidData: xmlText,
+      sessionKey: sessionKey,
+      hmac: hmac,
+      data: dataContent,
+      deviceInfo: pid.DeviceInfo
     };
     
     return biometricData;
@@ -185,7 +166,6 @@ async function captureFingerprint(device: BiometricDevice, wadh: string = ""): P
   } catch (err: any) {
     console.error("[Bio] ✗ Capture failed:", err.message);
     
-    // Handle network errors
     if (err.name === "TypeError" && err.message.includes("fetch")) {
       throw new Error("Driver not supported or installed. Please ensure the biometric device driver is running.");
     }
@@ -321,11 +301,15 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    const requestPayload = { mobile_no: mobileNumber };
+    // ✅ Exact format matching Go backend: mobile_no as string
+    const requestPayload = { 
+      mobile_no: mobileNumber 
+    };
 
     console.log("=== CHECK WALLET API CALL ===");
     console.log("Endpoint:", `${API_BASE_URL}/dmt/check/wallet`);
     console.log("Request Payload:", JSON.stringify(requestPayload, null, 2));
+    console.log("Auth Token exists:", !!localStorage.getItem("authToken"));
 
     try {
       const res = await axios.post<CheckWalletResponse>(
@@ -350,20 +334,15 @@ export default function DmtPage() {
       
       if (err.response) {
         console.error("HTTP Status:", err.response.status);
-        console.error("Response Headers:", err.response.headers);
         console.error("Response Data:", err.response.data);
         
-        // Handle different response types
         let errorMessage = "Error checking wallet";
         
         if (typeof err.response.data === 'string') {
-          // Server returned plain text error
           errorMessage = err.response.data;
         } else if (err.response.data?.message) {
-          // Server returned JSON with message
           errorMessage = err.response.data.message;
         } else if (err.response.data?.error) {
-          // Server returned JSON with error
           errorMessage = err.response.data.error;
         }
         
@@ -371,12 +350,11 @@ export default function DmtPage() {
         toast({ title: "Error", description: errorMessage, variant: "destructive" });
       } else if (err.request) {
         console.error("No response received");
-        console.error("Request:", err.request);
         const msg = "No response from server. Please check your connection.";
         setError(msg);
         toast({ title: "Network Error", description: msg, variant: "destructive" });
       } else {
-        console.error("Request setup error:", err.message);
+        console.error("Request error:", err.message);
         const msg = err.message || "Error checking wallet";
         setError(msg);
         toast({ title: "Error", description: msg, variant: "destructive" });
@@ -394,22 +372,16 @@ export default function DmtPage() {
       console.log("=== BIOMETRIC CAPTURE START ===");
       console.log("Device:", selectedDevice);
 
-      // ✅ Capture biometric data with wadh parameter
-      // You can get wadh from your configuration or leave empty
-      const wadh = ""; // Add your wadh value here if needed
-      const bioData = await captureFingerprint(selectedDevice, wadh);
+      const bioData = await captureFingerprint(selectedDevice);
 
       if (!bioData || !bioData.data) {
         throw new Error("Failed to capture biometric data");
       }
 
-      // ✅ Store the complete biometric data object
       setBiometricData(bioData);
 
       console.log("✅ Biometric data captured successfully");
       console.log("Data field length:", bioData.data.length, "characters");
-      console.log("Session Key length:", bioData.sessionKey.length, "characters");
-      console.log("HMAC length:", bioData.hmac.length, "characters");
       console.log("=== BIOMETRIC CAPTURE END ===");
 
       toast({
@@ -419,17 +391,13 @@ export default function DmtPage() {
 
     } catch (err: any) {
       console.error("Capture error:", err);
-
       const message = err?.message || "Fingerprint capture failed";
-
       setError(message);
-
       toast({
         title: "Capture Failed",
         description: message,
         variant: "destructive",
       });
-
     } finally {
       setCapturing(false);
     }
@@ -439,7 +407,6 @@ export default function DmtPage() {
     console.log("=== CREATE WALLET API CALL START ===");
     console.log("Timestamp:", new Date().toISOString());
     
-    // Validation
     if (!biometricData || !biometricData.data) {
       console.error("❌ No biometric data");
       setError("Please capture fingerprint first");
@@ -455,30 +422,22 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    // ✅ Send ONLY the Data field (base64 encrypted biometric string) to backend
-    // This is the encrypted biometric template that will be sent to UIDAI
+    // ✅ Exact format matching Go backend struct
     const requestPayload = {
-      retailer_id: retailerId,
-      mobile_no: mobileNumber,
-      lat: latitude,
-      long: longitude,
-      aadhaar_number: aadharNumber,
-      pid_data: biometricData.data, // ✅ Only the Data field (base64 string)
-      is_iris: 2,
+      retailer_id: retailerId,      // string
+      mobile_no: mobileNumber,       // string
+      lat: latitude,                 // string
+      long: longitude,               // string (note: "long" not "lng")
+      aadhaar_number: aadharNumber,  // string
+      pid_data: biometricData.data,  // string (only Data field content)
+      is_iris: 2,                    // int (always 2 for fingerprint)
     };
 
     console.log("📤 API Request:");
     console.log("  Endpoint:", `${API_BASE_URL}/dmt/create/wallet`);
-    console.log("  Retailer ID:", retailerId);
-    console.log("  Mobile:", mobileNumber);
-    console.log("  Aadhaar:", aadharNumber);
-    console.log("  Location (lat):", latitude, "(string)");
-    console.log("  Location (long):", longitude, "(string)");
-    console.log("  PID Data (Data field) length:", biometricData.data.length, "chars");
-    console.log("  PID Data preview:", biometricData.data.substring(0, 80) + "...");
-    console.log("  Session Key available:", biometricData.sessionKey.length > 0);
-    console.log("  HMAC available:", biometricData.hmac.length > 0);
-    console.log("  is_iris:", 2);
+    console.log("  Payload:", JSON.stringify(requestPayload, null, 2));
+    console.log("  PID Data length:", biometricData.data.length, "chars");
+    console.log("  Auth Token exists:", !!localStorage.getItem("authToken"));
 
     try {
       const startTime = Date.now();
@@ -739,7 +698,7 @@ export default function DmtPage() {
         {biometricData && (
           <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md px-3 py-2">
             <CheckCircle className="w-4 h-4" />
-            Biometric data captured (Data: {biometricData.data.length} chars, Quality: {biometricData.deviceInfo?.Resp?.qScore || 'N/A'})
+            Biometric data captured ({biometricData.data.length} chars)
           </div>
         )}
       </div>
