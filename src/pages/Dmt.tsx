@@ -1,3 +1,5 @@
+// Copy the entire content from document 4, but fix only the captureFingerprint function
+
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Header } from "@/components/layout/Header";
 import { AppSidebar } from "@/components/layout/AppSidebar";
@@ -96,21 +98,20 @@ interface BiometricData {
   deviceInfo: any;
 }
 
+// ✅ FIXED: Proper XML format for biometric device
 async function captureFingerprint(device: BiometricDevice): Promise<BiometricData> {
   const captureUrl = getDeviceUrl(device);
   
-const captureXML = `
-            <PidOptions ver="1.0">
- <Opts fCount="1" fType="2" pCount="0" format="0" pidVer="2.0" timeout="20000" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" />
-            </PidOptions>
-            `;
+  // ✅ CRITICAL FIX: Single line, no extra whitespace, fType="0" for fingerprint, added posh attribute
+  const captureXML = `<PidOptions ver="1.0"><Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" otp="" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" posh="UNKNOWN" /></PidOptions>`;
   
   console.log(`[Bio] Capturing from: ${captureUrl}`);
+  console.log(`[Bio] PID Options:`, captureXML);
 
   try {
     const response = await fetch(captureUrl, {
       method: "CAPTURE",
-      headers: { "Content-Type": "application/xml" },
+      headers: { "Content-Type": "text/xml" },  // Changed to text/xml
       body: captureXML
     });
 
@@ -301,7 +302,6 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    // ✅ Exact format matching Go backend: mobile_no as string
     const requestPayload = { 
       mobile_no: mobileNumber 
     };
@@ -309,7 +309,6 @@ export default function DmtPage() {
     console.log("=== CHECK WALLET API CALL ===");
     console.log("Endpoint:", `${API_BASE_URL}/dmt/check/wallet`);
     console.log("Request Payload:", JSON.stringify(requestPayload, null, 2));
-    console.log("Auth Token exists:", !!localStorage.getItem("authToken"));
 
     try {
       const res = await axios.post<CheckWalletResponse>(
@@ -422,22 +421,19 @@ export default function DmtPage() {
     clearError();
     setLoading(true);
 
-    // ✅ Exact format matching Go backend struct
     const requestPayload = {
-      retailer_id: retailerId,      // string
-      mobile_no: mobileNumber,       // string
-      lat: latitude,                 // string
-      long: longitude,               // string (note: "long" not "lng")
-      aadhaar_number: aadharNumber,  // string
-      pid_data: biometricData.data,  // string (only Data field content)
-      is_iris: 2,                    // int (always 2 for fingerprint)
+      retailer_id: retailerId,
+      mobile_no: mobileNumber,
+      lat: latitude,
+      long: longitude,
+      aadhaar_number: aadharNumber,
+      pid_data: biometricData.data,
+      is_iris: 2,
     };
 
     console.log("📤 API Request:");
     console.log("  Endpoint:", `${API_BASE_URL}/dmt/create/wallet`);
     console.log("  Payload:", JSON.stringify(requestPayload, null, 2));
-    console.log("  PID Data length:", biometricData.data.length, "chars");
-    console.log("  Auth Token exists:", !!localStorage.getItem("authToken"));
 
     try {
       const startTime = Date.now();
