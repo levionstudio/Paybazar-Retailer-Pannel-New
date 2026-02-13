@@ -97,12 +97,12 @@ interface BiometricData {
 }
 
 // ✅ Capture fingerprint - returns biometric data object
-async function captureFingerprint(device: BiometricDevice, wadh: string = "E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc"): Promise<BiometricData> {
+async function captureFingerprint(device: BiometricDevice): Promise<BiometricData> {
   const captureUrl = getDeviceUrl(device);
   
-  // ✅ Standard PID Options format with wadh
+  // ✅ Standard PID Options format without wadh
   const captureXML = `<PidOptions ver="1.0">
-    <Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" otp="" wadh="${wadh}" posh=""/>
+    <Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" otp="" wadh="" posh=""/>
 </PidOptions>`;
   
   console.log(`[Bio] Capturing from: ${captureUrl}`);
@@ -355,10 +355,8 @@ export default function DmtPage() {
       console.log("=== BIOMETRIC CAPTURE START ===");
       console.log("Device:", selectedDevice);
 
-      // ✅ Capture biometric data with wadh parameter
-      // You can get wadh from your configuration or leave empty
-      const wadh = ""; // Add your wadh value here if needed
-      const bioData = await captureFingerprint(selectedDevice, wadh);
+      // ✅ Capture biometric data without wadh parameter
+      const bioData = await captureFingerprint(selectedDevice);
 
       if (!bioData || !bioData.data) {
         throw new Error("Failed to capture biometric data");
