@@ -614,6 +614,7 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
+                <TableHead className="text-center whitespace-nowrap">S.NO</TableHead>
                 <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
                 <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
                 <TableHead className="text-center whitespace-nowrap">CUSTOMER ID</TableHead>
@@ -645,8 +646,13 @@ export default function DTHLedger({ userId }: DTHLedgerProps) {
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedTransactions.map((transaction) => (
+                paginatedTransactions.map((transaction,index) => (
+
+                  
                   <TableRow key={transaction.dth_transaction_id}>
+                    <TableCell className="text-center whitespace-nowrap">
+                      {startIdx + index + 1}
+                    </TableCell>
                     <TableCell className="text-center whitespace-nowrap">
                       {formatDate(transaction.created_at)}
                     </TableCell>

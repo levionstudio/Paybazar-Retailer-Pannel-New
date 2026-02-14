@@ -630,6 +630,7 @@ export default function PostpaidMobileRechargeLedger({ userId }: PostpaidMobileR
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
+                <TableHead className="text-center whitespace-nowrap">S.NO</TableHead>
                 <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
                 <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
                 <TableHead className="text-center whitespace-nowrap">MOBILE NUMBER</TableHead>
@@ -662,8 +663,12 @@ export default function PostpaidMobileRechargeLedger({ userId }: PostpaidMobileR
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedTransactions.map((transaction) => (
+                paginatedTransactions.map((transaction,index) => (
+                    
                   <TableRow key={transaction.postpaid_recharge_transaction_id}>
+                      <TableCell className="text-center whitespace-nowrap">
+      {startIdx + index + 1}
+    </TableCell>
                     <TableCell className="text-center whitespace-nowrap">
                       {formatDate(transaction.created_at)}
                     </TableCell>

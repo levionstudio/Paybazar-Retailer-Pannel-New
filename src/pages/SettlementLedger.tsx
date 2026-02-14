@@ -647,6 +647,7 @@ export default function SettlementLedger({ userId }: SettlementLedgerProps) {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
+                <TableHead className="text-center whitespace-nowrap">S.NO</TableHead>
                 <TableHead className="text-center whitespace-nowrap">DATE & TIME</TableHead>
                 <TableHead className="text-center whitespace-nowrap">TRANSACTION ID</TableHead>
                 <TableHead className="text-center whitespace-nowrap">PHONE</TableHead>
@@ -681,8 +682,12 @@ export default function SettlementLedger({ userId }: SettlementLedgerProps) {
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedTransactions.map((transaction) => (
-                  <TableRow key={transaction.payout_transaction_id}>
+                paginatedTransactions.map((transaction,index) => (
+                  <TableRow key={transaction.payout_transaction_id} className="hover:bg-gray-50">
+                    <TableCell className="text-center whitespace-nowrap">
+                      {startIdx + index + 1}
+                    </TableCell>
+
                     <TableCell className="text-center whitespace-nowrap">
                       {formatDate(transaction.created_at)}
                     </TableCell>
