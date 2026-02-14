@@ -41,7 +41,7 @@ export default function Services() {
       description: "Send money across India instantly",
       color: "bg-gradient-to-r from-indigo-600 to-indigo-400",
       category: "Transfer",
-      route: "/dmt",
+      route: "/services",
     },
     {
       
@@ -53,7 +53,7 @@ export default function Services() {
       description: "Withdraw cash using Aadhaar authentication",
       color: "bg-gradient-to-r from-blue-600 to-blue-400",
       category: "Banking",
-      route: "/aeps",
+      route: "/services",
     },
     {
       id: "utilities-bill",
@@ -87,7 +87,7 @@ export default function Services() {
       description: "Book flight and bus tickets",
       color: "bg-gradient-to-r from-indigo-600 to-indigo-400",
       category: "Ticket Booking",
-      route: "/service",
+      route: "/services",
      },
     {
   id: "upi",
@@ -98,7 +98,7 @@ export default function Services() {
   description: "Pay for your purchases using UPI",
   color: "bg-gradient-to-r from-purple-600 to-purple-400",
   category: "Upi",
-  route: "/service",
+  route: "/services",
 },
 
     

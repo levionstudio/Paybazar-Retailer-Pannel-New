@@ -1,4 +1,3 @@
-// Copy the entire content from document 4, but fix only the captureFingerprint function
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Header } from "@/components/layout/Header";
@@ -85,7 +84,6 @@ const getDeviceUrl = (device: BiometricDevice): string => {
   if (device === "morpho") {
     return "https://localhost:11100/capture";
   } else {
-    // mantra
     return "https://127.0.0.1:11100/rd/capture";
   }
 };
@@ -98,11 +96,9 @@ interface BiometricData {
   deviceInfo: any;
 }
 
-// ✅ FIXED: Proper XML format for biometric device
 async function captureFingerprint(device: BiometricDevice): Promise<BiometricData> {
   const captureUrl = getDeviceUrl(device);
   
-  // ✅ CRITICAL FIX: Single line, no extra whitespace, fType="0" for fingerprint, added posh attribute
   const captureXML = `<PidOptions ver="1.0"><Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="10000" otp="" wadh="E0jzJ/P8UopUHAieZn8CKqS4WPMi5ZSYXgfnlfkWjrc=" posh="UNKNOWN" /></PidOptions>`;
   
   console.log(`[Bio] Capturing from: ${captureUrl}`);
@@ -111,7 +107,7 @@ async function captureFingerprint(device: BiometricDevice): Promise<BiometricDat
   try {
     const response = await fetch(captureUrl, {
       method: "CAPTURE",
-      headers: { "Content-Type": "text/xml" },  // Changed to text/xml
+      headers: { "Content-Type": "text/xml" }, 
       body: captureXML
     });
 
