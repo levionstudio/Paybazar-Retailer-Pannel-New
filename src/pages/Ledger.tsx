@@ -23,7 +23,7 @@ export default function UserLedger() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
-  const [activeTab, setActiveTab] = useState("dth");
+  const [activeTab, setActiveTab] = useState("settlement");
 
   // Decode token
   useEffect(() => {
@@ -169,6 +169,13 @@ export default function UserLedger() {
             </div>
 
             <TabsContent 
+              value="settlement" 
+              className="animate-in fade-in-50 duration-300"
+            >
+              <SettlementLedger userId={tokenData.user_id} />
+            </TabsContent>
+
+            <TabsContent 
               value="dth" 
               className="animate-in fade-in-50 duration-300"
             >
@@ -194,13 +201,6 @@ export default function UserLedger() {
               className="animate-in fade-in-50 duration-300"
             >
               <ElectricityBillLedger userId={tokenData.user_id} />
-            </TabsContent>
-
-            <TabsContent 
-              value="settlement" 
-              className="animate-in fade-in-50 duration-300"
-            >
-              <SettlementLedger userId={tokenData.user_id} />
             </TabsContent>
           </Tabs>
         </main>
