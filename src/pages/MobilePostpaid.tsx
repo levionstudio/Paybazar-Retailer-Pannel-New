@@ -21,6 +21,8 @@ import {
   AlertCircle,
   ArrowLeft,
   FileText,
+  Search,
+  X,
 } from "lucide-react";
 import axios from "axios";
 import { jwtDecode, JwtPayload } from "jwt-decode";
@@ -105,7 +107,11 @@ const MobileRechargePostpaid = () => {
   const [isLoadingCircles, setIsLoadingCircles] = useState(true);
   const [isFetchingBill, setIsFetchingBill] = useState(false);
   const [operators, setOperators] = useState<Operator[]>([]);
+  const [filteredOperators, setFilteredOperators] = useState<Operator[]>([]);
+  const [operatorSearchQuery, setOperatorSearchQuery] = useState("");
   const [circles, setCircles] = useState<Circle[]>([]);
+  const [filteredCircles, setFilteredCircles] = useState<Circle[]>([]);
+  const [circleSearchQuery, setCircleSearchQuery] = useState("");
   const [billDetails, setBillDetails] = useState<BillDetails | null>(null);
   const [rechargeHistory, setRechargeHistory] = useState<RechargeHistory[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -201,6 +207,7 @@ const MobileRechargePostpaid = () => {
         console.log("===================================");
         
         setOperators(postpaidOperators);
+        setFilteredOperators(postpaidOperators);
       } catch (error: any) {
         console.log("=== OPERATORS FETCH ERROR ===");
         console.error("Error Type:", error.name);
@@ -209,6 +216,7 @@ const MobileRechargePostpaid = () => {
         console.log("=============================");
         
         setOperators([]);
+        setFilteredOperators([]);
         toast({
           title: "Error",
           description: error.response?.data?.message || error.message || "Failed to load operators",
@@ -254,6 +262,7 @@ const MobileRechargePostpaid = () => {
         }
         
         setCircles(circlesData);
+        setFilteredCircles(circlesData);
       } catch (error: any) {
         console.log("=== CIRCLES FETCH ERROR ===");
         console.error("Error Type:", error.name);
@@ -262,6 +271,7 @@ const MobileRechargePostpaid = () => {
         console.log("===========================");
         
         setCircles([]);
+        setFilteredCircles([]);
         toast({
           title: "Error",
           description: error.response?.data?.message || error.message || "Failed to load circles",
@@ -274,6 +284,34 @@ const MobileRechargePostpaid = () => {
 
     fetchCircles();
   }, [toast]);
+
+  // Filter operators based on search query
+  useEffect(() => {
+    if (operatorSearchQuery.trim() === "") {
+      setFilteredOperators(operators);
+    } else {
+      const filtered = operators.filter((operator) =>
+        operator.operator_name
+          .toLowerCase()
+          .includes(operatorSearchQuery.toLowerCase())
+      );
+      setFilteredOperators(filtered);
+    }
+  }, [operatorSearchQuery, operators]);
+
+  // Filter circles based on search query
+  useEffect(() => {
+    if (circleSearchQuery.trim() === "") {
+      setFilteredCircles(circles);
+    } else {
+      const filtered = circles.filter((circle) =>
+        circle.circle_name
+          .toLowerCase()
+          .includes(circleSearchQuery.toLowerCase())
+      );
+      setFilteredCircles(filtered);
+    }
+  }, [circleSearchQuery, circles]);
 
   // Fetch postpaid recharge history from BBPS endpoint
   const fetchRechargeHistory = async () => {
@@ -811,23 +849,68 @@ const MobileRechargePostpaid = () => {
                           <SelectValue placeholder={isLoadingOperators ? "Loading operators..." : "Select operator"} />
                         </SelectTrigger>
                         <SelectContent>
-                          {isLoadingOperators ? (
-                            <SelectItem value="loading" disabled>
-                              Loading operators...
-                            </SelectItem>
-                          ) : Array.isArray(operators) && operators.length > 0 ? (
-                            operators.map((operator) => (
-                              <SelectItem
-                                key={operator.operator_code}
-                                value={operator.operator_code.toString()}
-                              >
-                                {operator.operator_name}
+                          {/* Search Input Inside Dropdown */}
+                          <div className="sticky top-0 bg-background z-10 p-2 border-b">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                              <Input
+                                type="text"
+                                placeholder="Search operators..."
+                                value={operatorSearchQuery}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setOperatorSearchQuery(e.target.value);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                className="h-9 pl-9 pr-9"
+                              />
+                              {operatorSearchQuery && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOperatorSearchQuery("");
+                                  }}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Operators List */}
+                          <div className="max-h-[300px] overflow-y-auto">
+                            {isLoadingOperators ? (
+                              <SelectItem value="loading" disabled>
+                                Loading operators...
                               </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="no-operators" disabled>
-                              No postpaid operators available
-                            </SelectItem>
+                            ) : Array.isArray(filteredOperators) && filteredOperators.length > 0 ? (
+                              filteredOperators.map((operator) => (
+                                <SelectItem
+                                  key={operator.operator_code}
+                                  value={operator.operator_code.toString()}
+                                >
+                                  {operator.operator_name}
+                                </SelectItem>
+                              ))
+                            ) : operatorSearchQuery ? (
+                              <div className="py-6 text-center text-sm text-muted-foreground">
+                                No operators found for "{operatorSearchQuery}"
+                              </div>
+                            ) : (
+                              <SelectItem value="no-operators" disabled>
+                                No postpaid operators available
+                              </SelectItem>
+                            )}
+                          </div>
+
+                          {/* Results Count */}
+                          {operatorSearchQuery && filteredOperators.length > 0 && (
+                            <div className="sticky bottom-0 bg-background border-t p-2 text-xs text-center text-muted-foreground">
+                              Showing {filteredOperators.length} of {operators.length} operators
+                            </div>
                           )}
                         </SelectContent>
                       </Select>
@@ -851,23 +934,68 @@ const MobileRechargePostpaid = () => {
                           <SelectValue placeholder={isLoadingCircles ? "Loading circles..." : "Select circle"} />
                         </SelectTrigger>
                         <SelectContent>
-                          {isLoadingCircles ? (
-                            <SelectItem value="loading" disabled>
-                              Loading circles...
-                            </SelectItem>
-                          ) : Array.isArray(circles) && circles.length > 0 ? (
-                            circles.map((circle) => (
-                              <SelectItem
-                                key={circle.circle_code}
-                                value={circle.circle_code.toString()}
-                              >
-                                {circle.circle_name}
+                          {/* Search Input Inside Dropdown */}
+                          <div className="sticky top-0 bg-background z-10 p-2 border-b">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                              <Input
+                                type="text"
+                                placeholder="Search circles..."
+                                value={circleSearchQuery}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setCircleSearchQuery(e.target.value);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                className="h-9 pl-9 pr-9"
+                              />
+                              {circleSearchQuery && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCircleSearchQuery("");
+                                  }}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Circles List */}
+                          <div className="max-h-[300px] overflow-y-auto">
+                            {isLoadingCircles ? (
+                              <SelectItem value="loading" disabled>
+                                Loading circles...
                               </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="no-circles" disabled>
-                              No circles available
-                            </SelectItem>
+                            ) : Array.isArray(filteredCircles) && filteredCircles.length > 0 ? (
+                              filteredCircles.map((circle) => (
+                                <SelectItem
+                                  key={circle.circle_code}
+                                  value={circle.circle_code.toString()}
+                                >
+                                  {circle.circle_name}
+                                </SelectItem>
+                              ))
+                            ) : circleSearchQuery ? (
+                              <div className="py-6 text-center text-sm text-muted-foreground">
+                                No circles found for "{circleSearchQuery}"
+                              </div>
+                            ) : (
+                              <SelectItem value="no-circles" disabled>
+                                No circles available
+                              </SelectItem>
+                            )}
+                          </div>
+
+                          {/* Results Count */}
+                          {circleSearchQuery && filteredCircles.length > 0 && (
+                            <div className="sticky bottom-0 bg-background border-t p-2 text-xs text-center text-muted-foreground">
+                              Showing {filteredCircles.length} of {circles.length} circles
+                            </div>
                           )}
                         </SelectContent>
                       </Select>
