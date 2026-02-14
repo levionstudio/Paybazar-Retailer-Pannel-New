@@ -18,10 +18,14 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertCircle,
+  ArrowLeft,
+  Search,
+  X,
 } from "lucide-react";
 import axios from "axios";
 import { jwtDecode, JwtPayload } from "jwt-decode";
 import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -58,10 +62,13 @@ interface RechargeHistory {
 
 const DTHRecharge = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [retailerId, setRetailerId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingOperators, setIsLoadingOperators] = useState(true);
   const [operators, setOperators] = useState<Operator[]>([]);
+  const [filteredOperators, setFilteredOperators] = useState<Operator[]>([]);
+  const [operatorSearchQuery, setOperatorSearchQuery] = useState("");
   const [rechargeHistory, setRechargeHistory] = useState<RechargeHistory[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
@@ -156,6 +163,7 @@ const DTHRecharge = () => {
         
         console.log("Setting operators state with", operatorsData.length, "items");
         setOperators(operatorsData);
+        setFilteredOperators(operatorsData);
         console.log("Operators loaded successfully");
       } catch (error: any) {
         console.error("=== Error Fetching Operators ===");
@@ -165,6 +173,7 @@ const DTHRecharge = () => {
         console.error("Error message:", error.message);
         
         setOperators([]); // Set to empty array on error
+        setFilteredOperators([]);
         toast({
           title: "Error",
           description: error.response?.data?.message || error.message || "Failed to load operators",
@@ -178,6 +187,20 @@ const DTHRecharge = () => {
 
     fetchOperators();
   }, [toast]);
+
+  // Filter operators based on search query
+  useEffect(() => {
+    if (operatorSearchQuery.trim() === "") {
+      setFilteredOperators(operators);
+    } else {
+      const filtered = operators.filter((operator) =>
+        operator.operator_name
+          .toLowerCase()
+          .includes(operatorSearchQuery.toLowerCase())
+      );
+      setFilteredOperators(filtered);
+    }
+  }, [operatorSearchQuery, operators]);
 
   // Fetch recharge history
   const fetchRechargeHistory = async () => {
@@ -458,6 +481,16 @@ const DTHRecharge = () => {
 
         <div className="flex-1 p-6 overflow-y-auto">
           <div className="max-w-6xl mx-auto space-y-8">
+            {/* Back Button */}
+            <Button
+              variant="ghost"
+              onClick={() => navigate("/recharge")}
+              className="gap-2 hover:bg-muted/50"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Recharge
+            </Button>
+
             {/* DTH Recharge Card */}
             <Card className="shadow-lg border-border/50">
               <CardHeader className="paybazaar-gradient text-white rounded-t-xl space-y-1 pb-6">
@@ -532,23 +565,68 @@ const DTHRecharge = () => {
                         <SelectValue placeholder={isLoadingOperators ? "Loading operators..." : "Select DTH operator"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {isLoadingOperators ? (
-                          <SelectItem value="loading" disabled>
-                            Loading operators...
-                          </SelectItem>
-                        ) : Array.isArray(operators) && operators.length > 0 ? (
-                          operators.map((operator) => (
-                            <SelectItem
-                              key={operator.operator_code}
-                              value={operator.operator_code}
-                            >
-                              {operator.operator_name}
+                        {/* Search Input Inside Dropdown */}
+                        <div className="sticky top-0 bg-background z-10 p-2 border-b">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                              type="text"
+                              placeholder="Search operators..."
+                              value={operatorSearchQuery}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                setOperatorSearchQuery(e.target.value);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              className="h-9 pl-9 pr-9"
+                            />
+                            {operatorSearchQuery && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOperatorSearchQuery("");
+                                }}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Operators List */}
+                        <div className="max-h-[300px] overflow-y-auto">
+                          {isLoadingOperators ? (
+                            <SelectItem value="loading" disabled>
+                              Loading operators...
                             </SelectItem>
-                          ))
-                        ) : (
-                          <SelectItem value="no-operators" disabled>
-                            No operators available
-                          </SelectItem>
+                          ) : Array.isArray(filteredOperators) && filteredOperators.length > 0 ? (
+                            filteredOperators.map((operator) => (
+                              <SelectItem
+                                key={operator.operator_code}
+                                value={operator.operator_code}
+                              >
+                                {operator.operator_name}
+                              </SelectItem>
+                            ))
+                          ) : operatorSearchQuery ? (
+                            <div className="py-6 text-center text-sm text-muted-foreground">
+                              No operators found for "{operatorSearchQuery}"
+                            </div>
+                          ) : (
+                            <SelectItem value="no-operators" disabled>
+                              No operators available
+                            </SelectItem>
+                          )}
+                        </div>
+
+                        {/* Results Count */}
+                        {operatorSearchQuery && filteredOperators.length > 0 && (
+                          <div className="sticky bottom-0 bg-background border-t p-2 text-xs text-center text-muted-foreground">
+                            Showing {filteredOperators.length} of {operators.length} operators
+                          </div>
                         )}
                       </SelectContent>
                     </Select>
