@@ -21,6 +21,9 @@ import {
   ArrowLeft,
   Search,
   X,
+  Loader2,
+  WifiOff,
+  AlertTriangle,
 } from "lucide-react";
 import axios from "axios";
 import { jwtDecode, JwtPayload } from "jwt-decode";
@@ -28,7 +31,6 @@ import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-
 
 // Get auth headers
 const getAuthHeaders = () => {
@@ -85,15 +87,14 @@ const DTHRecharge = () => {
     const token = localStorage.getItem("authToken");
     
     if (!token) {
-      console.error("No auth token found in localStorage");
       toast({
-        title: "Authentication Error",
-        description: "Please login again",
+        title: "⚠️ Authentication Required",
+        description: "Please log in to access DTH recharge services",
         variant: "destructive",
       });
+      navigate("/login");
       return;
     }
-
     
     try {
       const decoded: JwtPayload = jwtDecode(token);
@@ -102,28 +103,27 @@ const DTHRecharge = () => {
       const userId =
         decoded.retailer_id || decoded.data?.user_id || decoded.user_id;
 
-
       if (!userId) {
-        console.error("User ID not found in token payload");
         toast({
-          title: "Error",
-          description: "Unable to identify user. Please login again.",
+          title: "⚠️ Session Error",
+          description: "Unable to verify your identity. Please log in again.",
           variant: "destructive",
         });
+        navigate("/login");
         return;
       }
 
       setRetailerId(userId);
     } catch (error) {
-      console.error("=== JWT Decode Error ===");
-      console.error("Error:", error);
+      console.error("JWT Decode Error:", error);
       toast({
-        title: "Error",
-        description: "Session expired. Please login again.",
+        title: "⚠️ Session Expired",
+        description: "Your session has expired. Please log in again to continue.",
         variant: "destructive",
       });
+      navigate("/login");
     }
-  }, [toast]);
+  }, [toast, navigate]);
 
   // Fetch operators
   useEffect(() => {
@@ -131,38 +131,46 @@ const DTHRecharge = () => {
       setIsLoadingOperators(true);
       try {
         const url = `${API_BASE_URL}/dth_recharge/get/operators`;
-     
 
-        const response = await axios.get(
-          url,
-          getAuthHeaders()
-        );
-        
+        const response = await axios.get(url, getAuthHeaders());
 
-        // Backend returns: { status, message, data: { operators: [...] } }
         const operatorsData = response.data?.data?.operators || [];
         
-
-        
         if (!Array.isArray(operatorsData)) {
-          console.error("Invalid response format - operators is not an array");
           throw new Error("Invalid response format");
+        }
+
+        if (operatorsData.length === 0) {
+          toast({
+            title: "⚠️ No Operators Available",
+            description: "No DTH operators are currently available. Please try again later.",
+            variant: "destructive",
+          });
         }
         
         setOperators(operatorsData);
         setFilteredOperators(operatorsData);
       } catch (error: any) {
-        console.error("=== Error Fetching Operators ===");
-        console.error("Error object:", error);
-        console.error("Error response:", error.response);
-        console.error("Error response data:", error.response?.data);
-        console.error("Error message:", error.message);
+        console.error("Error fetching operators:", error);
         
-        setOperators([]); // Set to empty array on error
+        setOperators([]);
         setFilteredOperators([]);
+        
+        let errorMessage = "Unable to load DTH operators. Please try again.";
+        
+        if (!navigator.onLine) {
+          errorMessage = "No internet connection. Please check your network and try again.";
+        } else if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+          errorMessage = "Request timed out. Please check your connection and try again.";
+        } else if (error.response?.status === 401) {
+          errorMessage = "Your session has expired. Please log in again.";
+        } else if (error.response?.status === 500) {
+          errorMessage = "Server error. Our team has been notified. Please try again later.";
+        }
+        
         toast({
-          title: "Error",
-          description: error.response?.data?.message || error.message || "Failed to load operators",
+          title: "❌ Failed to Load Operators",
+          description: errorMessage,
           variant: "destructive",
         });
       } finally {
@@ -198,35 +206,45 @@ const DTHRecharge = () => {
     try {
       const url = `${API_BASE_URL}/dth_recharge/get/${retailerId}`;
 
-      const response = await axios.get(
-        url,
-        getAuthHeaders()
-      );
-
+      const response = await axios.get(url, getAuthHeaders());
       
-      // Backend returns: { status, message, data: { recharges: [...] } }
       const historyData = response.data?.data?.recharges || [];
 
       if (!Array.isArray(historyData)) {
-        console.error("Invalid response format - recharges is not an array");
         throw new Error("Invalid response format");
       }
       
       setRechargeHistory(historyData);
-    } catch (error: any) {
-      console.error("Error object:", error);
-;
       
-      setRechargeHistory([]); // Set to empty array on error
+      // Show success message only if there's history
+      if (historyData.length > 0) {
+        toast({
+          title: "✓ History Loaded",
+          description: `Found ${historyData.length} recent recharge${historyData.length > 1 ? 's' : ''}`,
+        });
+      }
+    } catch (error: any) {
+      console.error("Error fetching recharge history:", error);
+      
+      setRechargeHistory([]);
       
       // Only show toast if it's not a "no data" error
       if (error.response?.status !== 404) {
+        let errorMessage = "Unable to load your recharge history.";
+        
+        if (!navigator.onLine) {
+          errorMessage = "No internet connection. Please check your network.";
+        } else if (error.response?.status === 401) {
+          errorMessage = "Your session has expired. Please log in again.";
+        } else if (error.response?.status === 500) {
+          errorMessage = "Server error. Please try again later.";
+        }
+        
         toast({
-          title: "Error",
-          description: error.response?.data?.message || error.message || "Failed to load recharge history",
+          title: "⚠️ History Load Failed",
+          description: errorMessage,
           variant: "destructive",
         });
-      } else {
       }
     } finally {
       setIsLoadingHistory(false);
@@ -241,23 +259,21 @@ const DTHRecharge = () => {
 
   // Handle operator change
   const handleOperatorChange = (value: string) => {
-
     const selectedOperator = operators.find(
       (op) => op.operator_code === value
     );
     
-
-    
     if (selectedOperator) {
-   
-      
       setRechargeForm({
         ...rechargeForm,
         operatorCode: value,
         operatorName: selectedOperator.operator_name,
       });
-    } else {
-      console.warn("Operator not found in list");
+      
+      toast({
+        title: "✓ Operator Selected",
+        description: `${selectedOperator.operator_name} selected`,
+      });
     }
   };
 
@@ -273,23 +289,47 @@ const DTHRecharge = () => {
     e.preventDefault();
 
     if (!retailerId) {
-      console.error("Retailer ID not found");
       toast({
-        title: "Error",
-        description: "User ID not found. Please login again.",
+        title: "⚠️ Session Error",
+        description: "Your session has expired. Please log in again to continue.",
+        variant: "destructive",
+      });
+      navigate("/login");
+      return;
+    }
+
+    // Comprehensive validation
+    if (!rechargeForm.customerId) {
+      toast({
+        title: "⚠️ Customer ID Required",
+        description: "Please enter your DTH customer ID or subscriber ID",
         variant: "destructive",
       });
       return;
     }
 
-
-
-    // Validation
     if (!validateCustomerId(rechargeForm.customerId)) {
-      console.error("Invalid customer ID:", rechargeForm.customerId);
       toast({
-        title: "Invalid Customer ID",
-        description: "Please enter a valid DTH customer ID (8-12 digits)",
+        title: "⚠️ Invalid Customer ID",
+        description: "DTH customer ID must be 8 to 12 digits. Please check and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!rechargeForm.operatorCode) {
+      toast({
+        title: "⚠️ Operator Not Selected",
+        description: "Please select your DTH operator",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!rechargeForm.amount) {
+      toast({
+        title: "⚠️ Amount Required",
+        description: "Please enter the recharge amount",
         variant: "destructive",
       });
       return;
@@ -297,20 +337,27 @@ const DTHRecharge = () => {
 
     const amount = parseFloat(rechargeForm.amount);
     if (isNaN(amount) || amount <= 0) {
-      console.error("Invalid amount:", rechargeForm.amount);
       toast({
-        title: "Invalid Amount",
-        description: "Please enter a valid amount",
+        title: "⚠️ Invalid Amount",
+        description: "Please enter a valid recharge amount greater than ₹0",
         variant: "destructive",
       });
       return;
     }
 
     if (amount < 200) {
-      console.error("Amount too low:", amount);
       toast({
-        title: "Amount Too Low",
-        description: "Minimum recharge amount is ₹200",
+        title: "⚠️ Amount Too Low",
+        description: "Minimum DTH recharge amount is ₹200. Please enter at least ₹200.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (amount > 50000) {
+      toast({
+        title: "⚠️ Amount Too High",
+        description: "Maximum DTH recharge amount is ₹50,000 per transaction",
         variant: "destructive",
       });
       return;
@@ -327,23 +374,18 @@ const DTHRecharge = () => {
         amount: amount,
       };
 
-
-
       const response = await axios.post(
         `${API_BASE_URL}/dth_recharge/create`,
         requestBody,
         getAuthHeaders()
       );
 
-
-      // Backend returns: { status: "success", message: "dth recharge successfull" }
       if (response.status === 200 || response.status === 201) {
         const responseMessage = response.data?.message || "DTH recharge initiated successfully";
         
-        
         toast({
-          title: "Success",
-          description: responseMessage,
+          title: "🎉 Recharge Successful!",
+          description: `₹${amount.toLocaleString('en-IN')} recharged successfully for ${rechargeForm.customerId} (${rechargeForm.operatorName})`,
         });
 
         // Reset form
@@ -358,29 +400,44 @@ const DTHRecharge = () => {
         fetchRechargeHistory();
       }
     } catch (error: any) {
+      console.error("Recharge error:", error);
 
-      console.error("Error object:", error);
-   
+      let errorTitle = "❌ Recharge Failed";
+      let errorMessage = "Unable to process your DTH recharge. Please try again.";
 
-      let errorMessage = "Failed to process recharge. Please try again.";
-
-      // Backend error format: { status: "failed", message: "error message" }
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
-        console.error("Backend error message:", errorMessage);
       } else if (error.response?.status === 400) {
-        errorMessage = "Invalid request data";
-        console.error("Bad request (400)");
+        errorTitle = "⚠️ Invalid Request";
+        errorMessage = "The recharge information provided is invalid. Please check and try again.";
       } else if (error.response?.status === 401) {
-        errorMessage = "Authentication failed. Please login again.";
-        console.error("Unauthorized (401)");
+        errorTitle = "🔒 Session Expired";
+        errorMessage = "Your session has expired. Please log in again to continue.";
       } else if (error.response?.status === 402) {
-        errorMessage = "Insufficient balance";
-        console.error("Payment required (402)");
+        errorTitle = "💰 Insufficient Balance";
+        errorMessage = "You don't have enough balance to complete this recharge. Please add funds to your wallet.";
+      } else if (error.response?.status === 403) {
+        errorTitle = "🚫 Access Denied";
+        errorMessage = "You don't have permission to perform this recharge.";
+      } else if (error.response?.status === 404) {
+        errorTitle = "⚠️ Service Not Found";
+        errorMessage = "The recharge service is temporarily unavailable. Please try again later.";
+      } else if (error.response?.status === 500) {
+        errorTitle = "⚠️ Server Error";
+        errorMessage = "Our server encountered an error. Our team has been notified. Please try again later.";
+      } else if (error.response?.status === 503) {
+        errorTitle = "⚠️ Service Unavailable";
+        errorMessage = "The recharge service is temporarily down for maintenance. Please try again in a few minutes.";
+      } else if (!navigator.onLine) {
+        errorTitle = "📡 No Internet Connection";
+        errorMessage = "Please check your internet connection and try again.";
+      } else if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+        errorTitle = "⏱️ Request Timeout";
+        errorMessage = "The request took too long. Please check your connection and try again.";
       }
 
       toast({
-        title: "Error",
+        title: errorTitle,
         description: errorMessage,
         variant: "destructive",
       });
@@ -445,7 +502,7 @@ const DTHRecharge = () => {
                   DTH Recharge
                 </CardTitle>
                 <p className="text-sm text-white/90">
-                  Quick and easy DTH recharge for all operators
+                  Instant DTH recharge for all major satellite TV operators
                 </p>
               </CardHeader>
 
@@ -457,12 +514,12 @@ const DTHRecharge = () => {
                       htmlFor="customerId"
                       className="text-sm font-medium text-foreground"
                     >
-                      DTH Customer ID <span className="text-red-500">*</span>
+                      DTH Customer ID / Subscriber ID <span className="text-red-500">*</span>
                     </Label>
                     <Input
                       id="customerId"
                       type="text"
-                      placeholder="Enter DTH customer ID"
+                      placeholder="Enter 8 to 12 digit customer ID"
                       value={rechargeForm.customerId}
                       onChange={(e) => {
                         const value = e.target.value.replace(/\D/g, "");
@@ -481,14 +538,23 @@ const DTHRecharge = () => {
                     />
                     {rechargeForm.customerId.length > 0 &&
                       rechargeForm.customerId.length < 8 && (
-                        <p className="text-xs text-amber-600">
-                          Enter complete customer ID (minimum 8 digits)
+                        <p className="text-xs text-amber-600 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          {8 - rechargeForm.customerId.length} more digit{8 - rechargeForm.customerId.length > 1 ? 's' : ''} required (minimum 8)
                         </p>
                       )}
                     {rechargeForm.customerId.length >= 8 &&
                       !validateCustomerId(rechargeForm.customerId) && (
-                        <p className="text-xs text-red-600">
-                          Invalid customer ID format
+                        <p className="text-xs text-red-600 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Customer ID must be 8-12 digits
+                        </p>
+                      )}
+                    {rechargeForm.customerId.length >= 8 &&
+                      validateCustomerId(rechargeForm.customerId) && (
+                        <p className="text-xs text-green-600 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Valid customer ID
                         </p>
                       )}
                   </div>
@@ -508,7 +574,7 @@ const DTHRecharge = () => {
                       required
                     >
                       <SelectTrigger className="h-12">
-                        <SelectValue placeholder={isLoadingOperators ? "Loading operators..." : "Select DTH operator"} />
+                        <SelectValue placeholder={isLoadingOperators ? "Loading operators..." : "Select your DTH operator"} />
                       </SelectTrigger>
                       <SelectContent>
                         {/* Search Input Inside Dropdown */}
@@ -545,9 +611,10 @@ const DTHRecharge = () => {
                         {/* Operators List */}
                         <div className="max-h-[300px] overflow-y-auto">
                           {isLoadingOperators ? (
-                            <SelectItem value="loading" disabled>
-                              Loading operators...
-                            </SelectItem>
+                            <div className="py-8 flex flex-col items-center justify-center text-muted-foreground">
+                              <Loader2 className="w-6 h-6 animate-spin mb-2" />
+                              <p className="text-sm">Loading operators...</p>
+                            </div>
                           ) : Array.isArray(filteredOperators) && filteredOperators.length > 0 ? (
                             filteredOperators.map((operator) => (
                               <SelectItem
@@ -559,12 +626,14 @@ const DTHRecharge = () => {
                             ))
                           ) : operatorSearchQuery ? (
                             <div className="py-6 text-center text-sm text-muted-foreground">
+                              <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
                               No operators found for "{operatorSearchQuery}"
                             </div>
                           ) : (
-                            <SelectItem value="no-operators" disabled>
-                              No operators available
-                            </SelectItem>
+                            <div className="py-6 text-center text-sm text-muted-foreground">
+                              <WifiOff className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                              No DTH operators available
+                            </div>
                           )}
                         </div>
 
@@ -584,7 +653,7 @@ const DTHRecharge = () => {
                       htmlFor="amount"
                       className="text-sm font-medium text-foreground"
                     >
-                      Amount <span className="text-red-500">*</span>
+                      Recharge Amount <span className="text-red-500">*</span>
                     </Label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">
@@ -593,7 +662,7 @@ const DTHRecharge = () => {
                       <Input
                         id="amount"
                         type="number"
-                        placeholder="Enter amount"
+                        placeholder="Enter recharge amount"
                         value={rechargeForm.amount}
                         onChange={(e) =>
                           setRechargeForm({
@@ -602,6 +671,7 @@ const DTHRecharge = () => {
                           })
                         }
                         min="200"
+                        max="50000"
                         step="1"
                         required
                         disabled={isLoading}
@@ -610,23 +680,38 @@ const DTHRecharge = () => {
                     </div>
                     {parseFloat(rechargeForm.amount) > 0 &&
                       parseFloat(rechargeForm.amount) < 200 && (
-                        <p className="text-xs text-amber-600">
-                          Minimum recharge amount is ₹200
+                        <p className="text-xs text-amber-600 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Minimum DTH recharge amount is ₹200
+                        </p>
+                      )}
+                    {parseFloat(rechargeForm.amount) > 50000 && (
+                      <p className="text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Maximum recharge amount is ₹50,000 per transaction
+                      </p>
+                    )}
+                    {parseFloat(rechargeForm.amount) >= 200 &&
+                      parseFloat(rechargeForm.amount) <= 50000 && (
+                        <p className="text-xs text-muted-foreground">
+                          Recharging ₹{parseFloat(rechargeForm.amount).toLocaleString('en-IN')} to your DTH account
                         </p>
                       )}
                   </div>
 
                   {/* Information Box */}
-                  <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-                    <p className="text-sm font-medium text-foreground">
-                      Important Information:
+                  <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
+                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      Important Information
                     </p>
-                    <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                      <li>Ensure you have sufficient balance in your account</li>
-                      <li>Recharge will be processed instantly</li>
-                      <li>Check your customer ID carefully before submitting</li>
-                      <li>Transaction once done cannot be reversed</li>
-                      <li>For any issues, contact support immediately</li>
+                    <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-disc list-inside ml-1">
+                      <li>Ensure you have sufficient balance in your wallet</li>
+                      <li>Recharge will be processed instantly upon confirmation</li>
+                      <li>Double-check your customer ID before submitting</li>
+                      <li>Completed transactions cannot be reversed or cancelled</li>
+                      <li>Your DTH service will be activated within a few minutes</li>
+                      <li>Contact support immediately if you face any issues</li>
                     </ul>
                   </div>
 
@@ -638,38 +723,20 @@ const DTHRecharge = () => {
                       isLoading ||
                       !validateCustomerId(rechargeForm.customerId) ||
                       !rechargeForm.operatorCode ||
-                      parseFloat(rechargeForm.amount) < 10
+                      parseFloat(rechargeForm.amount) < 200 ||
+                      parseFloat(rechargeForm.amount) > 50000
                     }
                     className="w-full paybazaar-gradient text-white hover:opacity-90 transition-opacity h-12 text-base font-medium disabled:opacity-50"
                   >
                     {isLoading ? (
                       <span className="flex items-center gap-2">
-                        <svg
-                          className="animate-spin h-4 w-4"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          ></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          ></path>
-                        </svg>
-                        Processing Recharge...
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Processing Your Recharge...
                       </span>
                     ) : (
                       <>
                         <Tv className="w-4 h-4 mr-2" />
-                        Recharge Now
+                        Recharge ₹{rechargeForm.amount || '0'} Now
                       </>
                     )}
                   </Button>
@@ -690,9 +757,10 @@ const DTHRecharge = () => {
                     size="sm"
                     onClick={fetchRechargeHistory}
                     disabled={isLoadingHistory}
+                    title="Refresh recharge history"
                   >
                     {isLoadingHistory ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <>
                         <RefreshCw className="w-4 h-4 mr-1" />
@@ -701,17 +769,28 @@ const DTHRecharge = () => {
                     )}
                   </Button>
                 </CardTitle>
+                <p className="text-sm text-white/90">
+                  View your last 10 DTH recharge transactions
+                </p>
               </CardHeader>
 
               <CardContent className="pt-6">
                 {isLoadingHistory ? (
-                  <div className="flex items-center justify-center py-8">
-                    <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary mb-3" />
+                    <p className="text-sm text-muted-foreground">Loading your recharge history...</p>
                   </div>
                 ) : rechargeHistory.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Tv className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No recharge history found</p>
+                  <div className="text-center py-12">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                      <Tv className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <p className="text-lg font-semibold text-foreground mb-2">
+                      No Recharge History
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Your DTH recharge transactions will appear here
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -722,8 +801,8 @@ const DTHRecharge = () => {
                       >
                         <div className="flex items-start justify-between">
                           <div className="space-y-1 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold text-base">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-base font-mono">
                                 {history.customer_id}
                               </p>
                               {getStatusBadge(history.status)}
@@ -732,16 +811,23 @@ const DTHRecharge = () => {
                               {history.operator_name}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {new Date(history.created_at).toLocaleString()}
+                              {new Date(history.created_at).toLocaleString('en-IN', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
                             </p>
                           </div>
                           <div className="text-right">
                             <p className="font-bold text-lg text-primary">
-                              ₹{history.amount.toFixed(2)}
+                              ₹{history.amount.toLocaleString('en-IN')}
                             </p>
                             {history.commision > 0 && (
-                              <p className="text-xs text-green-600">
-                                Commission: ₹{history.commision.toFixed(2)}
+                              <p className="text-xs text-green-600 flex items-center gap-1 justify-end">
+                                <CheckCircle2 className="w-3 h-3" />
+                                +₹{history.commision.toFixed(2)} earned
                               </p>
                             )}
                           </div>

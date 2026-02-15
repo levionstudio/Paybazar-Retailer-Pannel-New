@@ -23,6 +23,10 @@ import {
   FileText,
   Search,
   X,
+  Loader2,
+  WifiOff,
+  AlertTriangle,
+  Receipt,
 } from "lucide-react";
 import axios from "axios";
 import { jwtDecode, JwtPayload } from "jwt-decode";
@@ -131,10 +135,11 @@ const MobileRechargePostpaid = () => {
     const token = localStorage.getItem("authToken");
     if (!token) {
       toast({
-        title: "Authentication Error",
-        description: "Please login again",
+        title: "⚠️ Authentication Required",
+        description: "Please log in to access postpaid bill payment services",
         variant: "destructive",
       });
+      navigate("/login");
       return;
     }
 
@@ -146,10 +151,11 @@ const MobileRechargePostpaid = () => {
 
       if (!userId) {
         toast({
-          title: "Error",
-          description: "Unable to identify user. Please login again.",
+          title: "⚠️ Session Error",
+          description: "Unable to verify your identity. Please log in again.",
           variant: "destructive",
         });
+        navigate("/login");
         return;
       }
 
@@ -157,19 +163,19 @@ const MobileRechargePostpaid = () => {
     } catch (error) {
       console.error("Error decoding JWT:", error);
       toast({
-        title: "Error",
-        description: "Session expired. Please login again.",
+        title: "⚠️ Session Expired",
+        description: "Your session has expired. Please log in again to continue.",
         variant: "destructive",
       });
+      navigate("/login");
     }
-  }, [toast]);
+  }, [toast, navigate]);
 
   // Fetch operators (filtered for postpaid only)
   useEffect(() => {
     const fetchOperators = async () => {
       setIsLoadingOperators(true);
 
-      
       try {
         const response = await axios.get(
           `${API_BASE_URL}/mobile_recharge/get/operators`,
@@ -178,10 +184,7 @@ const MobileRechargePostpaid = () => {
 
         const operatorsData = response.data?.data?.operators || [];
         
-   
-        
         if (!Array.isArray(operatorsData)) {
-          console.error("❌ Invalid response format - operators is not an array");
           throw new Error("Invalid response format");
         }
         
@@ -190,18 +193,37 @@ const MobileRechargePostpaid = () => {
           const operatorName = operator.operator_name.toLowerCase();
           return operatorName.includes('postpaid');
         });
- 
+
+        if (postpaidOperators.length === 0) {
+          toast({
+            title: "⚠️ No Postpaid Operators",
+            description: "No postpaid operators are currently available. Please try again later.",
+            variant: "destructive",
+          });
+        }
         
         setOperators(postpaidOperators);
         setFilteredOperators(postpaidOperators);
       } catch (error: any) {
-      
-        
+        console.error("Error fetching operators:", error);
         setOperators([]);
         setFilteredOperators([]);
+        
+        let errorMessage = "Unable to load postpaid operators. Please try again.";
+        
+        if (!navigator.onLine) {
+          errorMessage = "No internet connection. Please check your network and try again.";
+        } else if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+          errorMessage = "Request timed out. Please check your connection and try again.";
+        } else if (error.response?.status === 401) {
+          errorMessage = "Your session has expired. Please log in again.";
+        } else if (error.response?.status === 500) {
+          errorMessage = "Server error. Our team has been notified. Please try again later.";
+        }
+        
         toast({
-          title: "Error",
-          description: error.response?.data?.message || error.message || "Failed to load operators",
+          title: "❌ Failed to Load Operators",
+          description: errorMessage,
           variant: "destructive",
         });
       } finally {
@@ -216,7 +238,6 @@ const MobileRechargePostpaid = () => {
   useEffect(() => {
     const fetchCircles = async () => {
       setIsLoadingCircles(true);
-      
 
       try {
         const response = await axios.get(
@@ -224,25 +245,42 @@ const MobileRechargePostpaid = () => {
           getAuthHeaders()
         );
         
- 
-        
         const circlesData = response.data?.data?.circles || [];
- 
         
         if (!Array.isArray(circlesData)) {
-     
           throw new Error("Invalid response format");
+        }
+
+        if (circlesData.length === 0) {
+          toast({
+            title: "⚠️ No Circles Available",
+            description: "No telecom circles are currently available. Please try again later.",
+            variant: "destructive",
+          });
         }
         
         setCircles(circlesData);
         setFilteredCircles(circlesData);
       } catch (error: any) {
-     
+        console.error("Error fetching circles:", error);
         setCircles([]);
         setFilteredCircles([]);
+        
+        let errorMessage = "Unable to load circles. Please try again.";
+        
+        if (!navigator.onLine) {
+          errorMessage = "No internet connection. Please check your network and try again.";
+        } else if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+          errorMessage = "Request timed out. Please check your connection and try again.";
+        } else if (error.response?.status === 401) {
+          errorMessage = "Your session has expired. Please log in again.";
+        } else if (error.response?.status === 500) {
+          errorMessage = "Server error. Our team has been notified. Please try again later.";
+        }
+        
         toast({
-          title: "Error",
-          description: error.response?.data?.message || error.message || "Failed to load circles",
+          title: "❌ Failed to Load Circles",
+          description: errorMessage,
           variant: "destructive",
         });
       } finally {
@@ -287,39 +325,47 @@ const MobileRechargePostpaid = () => {
 
     setIsLoadingHistory(true);
     
-
-    
     try {
       const response = await axios.get(
         `${API_BASE_URL}/bbps/recharge/get/${retailerId}`,
         getAuthHeaders()
       );
-      
 
-      
-      // Backend returns: { status, message, data: { history: [...] } }
       const historyData = response.data?.data?.history || [];
-
       
       if (!Array.isArray(historyData)) {
-        console.error("❌ Invalid response format - history is not an array");
         throw new Error("Invalid response format");
       }
       
       setRechargeHistory(historyData);
-
+      
+      // Show success message only if there's history
+      if (historyData.length > 0) {
+        toast({
+          title: "✓ History Loaded",
+          description: `Found ${historyData.length} recent payment${historyData.length > 1 ? 's' : ''}`,
+        });
+      }
     } catch (error: any) {
-
+      console.error("Error fetching recharge history:", error);
       setRechargeHistory([]);
       
       if (error.response?.status !== 404) {
+        let errorMessage = "Unable to load your payment history.";
+        
+        if (!navigator.onLine) {
+          errorMessage = "No internet connection. Please check your network.";
+        } else if (error.response?.status === 401) {
+          errorMessage = "Your session has expired. Please log in again.";
+        } else if (error.response?.status === 500) {
+          errorMessage = "Server error. Please try again later.";
+        }
+        
         toast({
-          title: "Error",
-          description: error.response?.data?.message || error.message || "Failed to load postpaid recharge history",
+          title: "⚠️ History Load Failed",
+          description: errorMessage,
           variant: "destructive",
         });
-      } else {
- 
       }
     } finally {
       setIsLoadingHistory(false);
@@ -336,8 +382,8 @@ const MobileRechargePostpaid = () => {
   const handleFetchBill = async () => {
     if (!rechargeForm.mobileNumber || !rechargeForm.operatorCode) {
       toast({
-        title: "Missing Information",
-        description: "Please enter mobile number and select operator",
+        title: "⚠️ Missing Information",
+        description: "Please enter mobile number and select operator before fetching bill",
         variant: "destructive",
       });
       return;
@@ -345,8 +391,8 @@ const MobileRechargePostpaid = () => {
 
     if (!validateMobileNumber(rechargeForm.mobileNumber)) {
       toast({
-        title: "Invalid Mobile Number",
-        description: "Please enter a valid 10-digit mobile number",
+        title: "⚠️ Invalid Mobile Number",
+        description: "Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9",
         variant: "destructive",
       });
       return;
@@ -361,8 +407,6 @@ const MobileRechargePostpaid = () => {
       operator_code: parseInt(rechargeForm.operatorCode),
     };
 
-  
-
     try {
       const response = await axios.post(
         `${API_BASE_URL}/bbps/get/postpaid/balance`,
@@ -370,13 +414,7 @@ const MobileRechargePostpaid = () => {
         getAuthHeaders()
       );
 
-
-
-      // Backend returns: { status, message, data: { response: { error, msg, status, billAmount: [...] } } }
-      // billAmount is an ARRAY with one object
       const billAmountArray = response.data?.data?.response?.billAmount;
-
-   
 
       // Get first item from array
       const billData = Array.isArray(billAmountArray) && billAmountArray.length > 0 
@@ -384,8 +422,6 @@ const MobileRechargePostpaid = () => {
         : null;
 
       if (billData) {
-    
-
         // Parse string amounts to numbers
         const parsedBillData: BillDetails = {
           billAmount: parseFloat(billData.billAmount),
@@ -398,8 +434,6 @@ const MobileRechargePostpaid = () => {
           userName: billData.userName,
         };
 
-
-
         if (parsedBillData.acceptPayment) {
           setBillDetails(parsedBillData);
           setRechargeForm({
@@ -407,34 +441,56 @@ const MobileRechargePostpaid = () => {
             amount: parsedBillData.billAmount.toString(),
           });
           
-        
           toast({
-            title: "Bill Fetched Successfully",
-            description: `Bill amount: ₹${parsedBillData.billAmount.toFixed(2)}`,
+            title: "✓ Bill Fetched Successfully",
+            description: `Bill for ${parsedBillData.userName}: ₹${parsedBillData.billAmount.toLocaleString('en-IN')} • Due: ${parsedBillData.dueDate}`,
           });
         } else {
-
           toast({
-            title: "Bill Not Available",
-            description: "This bill does not accept payment at the moment",
+            title: "⚠️ Bill Not Payable",
+            description: "This bill is not currently accepting payments. Please try again later or contact your operator.",
             variant: "destructive",
           });
         }
       } else {
-      
-        
+        const apiMessage = response.data?.data?.response?.msg;
         toast({
-          title: "Bill Not Available",
-          description: response.data?.data?.response?.msg || "Unable to fetch bill details",
+          title: "⚠️ Bill Not Available",
+          description: apiMessage || "No pending bill found for this number. Please verify the mobile number and operator.",
           variant: "destructive",
         });
       }
     } catch (error: any) {
-
+      console.error("Error fetching bill:", error);
+      
+      let errorTitle = "❌ Failed to Fetch Bill";
+      let errorMessage = "Unable to retrieve bill details. Please try again.";
+      
+      if (!navigator.onLine) {
+        errorTitle = "📡 No Internet Connection";
+        errorMessage = "Please check your internet connection and try again.";
+      } else if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+        errorTitle = "⏱️ Request Timeout";
+        errorMessage = "The request took too long. Please check your connection and try again.";
+      } else if (error.response?.status === 400) {
+        errorTitle = "⚠️ Invalid Request";
+        errorMessage = "The mobile number or operator combination is invalid. Please verify and try again.";
+      } else if (error.response?.status === 401) {
+        errorTitle = "🔒 Session Expired";
+        errorMessage = "Your session has expired. Please log in again.";
+      } else if (error.response?.status === 404) {
+        errorTitle = "📄 No Bill Found";
+        errorMessage = "No pending bill found for this number. Please verify the mobile number and operator.";
+      } else if (error.response?.status === 500) {
+        errorTitle = "⚠️ Server Error";
+        errorMessage = "Our server encountered an error. Our team has been notified. Please try again later.";
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
       
       toast({
-        title: "Error",
-        description: error.response?.data?.message || "Failed to fetch bill details",
+        title: errorTitle,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -454,6 +510,11 @@ const MobileRechargePostpaid = () => {
         operatorName: selectedOperator.operator_name,
       });
       setBillDetails(null); // Reset bill details when operator changes
+      
+      toast({
+        title: "✓ Operator Selected",
+        description: `${selectedOperator.operator_name} selected`,
+      });
     }
   };
 
@@ -467,6 +528,11 @@ const MobileRechargePostpaid = () => {
         ...rechargeForm,
         circleCode: value,
         circleName: selectedCircle.circle_name,
+      });
+      
+      toast({
+        title: "✓ Circle Selected",
+        description: `${selectedCircle.circle_name} selected`,
       });
     }
   };
@@ -483,18 +549,64 @@ const MobileRechargePostpaid = () => {
 
     if (!retailerId) {
       toast({
-        title: "Error",
-        description: "User ID not found. Please login again.",
+        title: "⚠️ Session Error",
+        description: "Your session has expired. Please log in again to continue.",
+        variant: "destructive",
+      });
+      navigate("/login");
+      return;
+    }
+
+    // Comprehensive validation
+    if (!rechargeForm.mobileNumber) {
+      toast({
+        title: "⚠️ Mobile Number Required",
+        description: "Please enter the postpaid mobile number",
         variant: "destructive",
       });
       return;
     }
 
-    // Validation
     if (!validateMobileNumber(rechargeForm.mobileNumber)) {
       toast({
-        title: "Invalid Mobile Number",
-        description: "Please enter a valid 10-digit mobile number",
+        title: "⚠️ Invalid Mobile Number",
+        description: "Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!rechargeForm.operatorCode) {
+      toast({
+        title: "⚠️ Operator Not Selected",
+        description: "Please select the postpaid operator",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!rechargeForm.circleCode) {
+      toast({
+        title: "⚠️ Circle Not Selected",
+        description: "Please select the telecom circle for this number",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!billDetails) {
+      toast({
+        title: "⚠️ Bill Not Fetched",
+        description: "Please fetch the bill details before making payment",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!rechargeForm.amount) {
+      toast({
+        title: "⚠️ Amount Required",
+        description: "Please enter the payment amount",
         variant: "destructive",
       });
       return;
@@ -503,23 +615,21 @@ const MobileRechargePostpaid = () => {
     const amount = parseFloat(rechargeForm.amount);
     if (isNaN(amount) || amount <= 0) {
       toast({
-        title: "Invalid Amount",
-        description: "Please enter a valid amount",
+        title: "⚠️ Invalid Amount",
+        description: "Please enter a valid payment amount greater than ₹0",
         variant: "destructive",
       });
       return;
     }
 
-    if (!rechargeForm.circleCode) {
+    if (amount > billDetails.billAmount * 2) {
       toast({
-        title: "Missing Information",
-        description: "Please select a circle",
+        title: "⚠️ Amount Too High",
+        description: `The amount seems unusually high. Bill amount is ₹${billDetails.billAmount.toLocaleString('en-IN')}. Please verify.`,
         variant: "destructive",
       });
       return;
     }
-
-
 
     setIsLoading(true);
 
@@ -534,8 +644,6 @@ const MobileRechargePostpaid = () => {
       partner_request_id: `POSTPAID_${Date.now()}`,
     };
 
-
-
     try {
       const response = await axios.post(
         `${API_BASE_URL}/bbps/create/postpaid`,
@@ -543,43 +651,67 @@ const MobileRechargePostpaid = () => {
         getAuthHeaders()
       );
 
- 
-
       if (response.status === 200 || response.status === 201) {
         const responseMessage = response.data?.message || "Postpaid bill payment successful";
         
-
-        
         toast({
-          title: "Success",
-          description: responseMessage,
+          title: "🎉 Payment Successful!",
+          description: `₹${amount.toLocaleString('en-IN')} paid successfully for ${rechargeForm.mobileNumber} (${rechargeForm.operatorName})`,
         });
 
-     
+        // Reset form and bill details
+        setRechargeForm({
+          mobileNumber: "",
+          operatorCode: "",
+          operatorName: "",
+          circleCode: "",
+          circleName: "",
+          amount: "",
+        });
         setBillDetails(null);
 
         // Refresh history
         fetchRechargeHistory();
       }
     } catch (error: any) {
+      console.error("Payment error:", error);
 
-
-      let errorMessage = "Failed to process payment. Please try again.";
+      let errorTitle = "❌ Payment Failed";
+      let errorMessage = "Unable to process your payment. Please try again.";
 
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.response?.status === 400) {
-        errorMessage = "Invalid request data";
+        errorTitle = "⚠️ Invalid Request";
+        errorMessage = "The payment information provided is invalid. Please check and try again.";
       } else if (error.response?.status === 401) {
-        errorMessage = "Authentication failed. Please login again.";
+        errorTitle = "🔒 Session Expired";
+        errorMessage = "Your session has expired. Please log in again to continue.";
       } else if (error.response?.status === 402) {
-        errorMessage = "Insufficient balance";
+        errorTitle = "💰 Insufficient Balance";
+        errorMessage = "You don't have enough balance to complete this payment. Please add funds to your wallet.";
+      } else if (error.response?.status === 403) {
+        errorTitle = "🚫 Access Denied";
+        errorMessage = "You don't have permission to perform this payment.";
+      } else if (error.response?.status === 404) {
+        errorTitle = "⚠️ Service Not Found";
+        errorMessage = "The payment service is temporarily unavailable. Please try again later.";
+      } else if (error.response?.status === 500) {
+        errorTitle = "⚠️ Server Error";
+        errorMessage = "Our server encountered an error. Our team has been notified. Please try again later.";
+      } else if (error.response?.status === 503) {
+        errorTitle = "⚠️ Service Unavailable";
+        errorMessage = "The payment service is temporarily down for maintenance. Please try again in a few minutes.";
+      } else if (!navigator.onLine) {
+        errorTitle = "📡 No Internet Connection";
+        errorMessage = "Please check your internet connection and try again.";
+      } else if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+        errorTitle = "⏱️ Request Timeout";
+        errorMessage = "The request took too long. Please check your connection and try again.";
       }
 
-
-
       toast({
-        title: "Error",
+        title: errorTitle,
         description: errorMessage,
         variant: "destructive",
       });
@@ -630,9 +762,9 @@ const MobileRechargePostpaid = () => {
             <Button
               variant="ghost"
               onClick={() => navigate(-1)}
-              className="mb-4 hover:bg-muted"
+              className="gap-2 hover:bg-muted/50"
             >
-              <ArrowLeft className="w-4 h-4 mr-2" />
+              <ArrowLeft className="w-4 h-4" />
               Back to BBPS
             </Button>
 
@@ -644,7 +776,7 @@ const MobileRechargePostpaid = () => {
                   Mobile Recharge - Postpaid
                 </CardTitle>
                 <p className="text-sm text-white/90">
-                  Pay your postpaid mobile bills instantly
+                  Pay your postpaid mobile bills instantly with ease
                 </p>
               </CardHeader>
 
@@ -656,7 +788,7 @@ const MobileRechargePostpaid = () => {
                       htmlFor="mobileNumber"
                       className="text-sm font-medium text-foreground"
                     >
-                      Mobile Number <span className="text-red-500">*</span>
+                      Postpaid Mobile Number <span className="text-red-500">*</span>
                     </Label>
                     <div className="flex gap-2">
                       <Input
@@ -691,9 +823,10 @@ const MobileRechargePostpaid = () => {
                           !validateMobileNumber(rechargeForm.mobileNumber)
                         }
                         className="h-12 px-6"
+                        title={!rechargeForm.operatorCode ? "Select operator first" : "Fetch bill details"}
                       >
                         {isFetchingBill ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
                           <>
                             <FileText className="w-4 h-4 mr-2" />
@@ -704,15 +837,23 @@ const MobileRechargePostpaid = () => {
                     </div>
                     {rechargeForm.mobileNumber.length > 0 &&
                       rechargeForm.mobileNumber.length < 10 && (
-                        <p className="text-xs text-amber-600">
-                          Enter complete 10-digit mobile number (
-                          {rechargeForm.mobileNumber.length}/10)
+                        <p className="text-xs text-amber-600 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          {10 - rechargeForm.mobileNumber.length} more digit{10 - rechargeForm.mobileNumber.length > 1 ? 's' : ''} required
                         </p>
                       )}
                     {rechargeForm.mobileNumber.length === 10 &&
                       !validateMobileNumber(rechargeForm.mobileNumber) && (
-                        <p className="text-xs text-red-600">
-                          Invalid mobile number format
+                        <p className="text-xs text-red-600 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Invalid mobile number (must start with 6, 7, 8, or 9)
+                        </p>
+                      )}
+                    {rechargeForm.mobileNumber.length === 10 &&
+                      validateMobileNumber(rechargeForm.mobileNumber) && (
+                        <p className="text-xs text-green-600 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Valid mobile number
                         </p>
                       )}
                   </div>
@@ -725,7 +866,7 @@ const MobileRechargePostpaid = () => {
                         htmlFor="operator"
                         className="text-sm font-medium text-foreground"
                       >
-                        Operator <span className="text-red-500">*</span>
+                        Postpaid Operator <span className="text-red-500">*</span>
                       </Label>
                       <Select
                         value={rechargeForm.operatorCode}
@@ -734,7 +875,7 @@ const MobileRechargePostpaid = () => {
                         required
                       >
                         <SelectTrigger className="h-12">
-                          <SelectValue placeholder={isLoadingOperators ? "Loading operators..." : "Select operator"} />
+                          <SelectValue placeholder={isLoadingOperators ? "Loading operators..." : "Select postpaid operator"} />
                         </SelectTrigger>
                         <SelectContent>
                           {/* Search Input Inside Dropdown */}
@@ -771,9 +912,10 @@ const MobileRechargePostpaid = () => {
                           {/* Operators List */}
                           <div className="max-h-[300px] overflow-y-auto">
                             {isLoadingOperators ? (
-                              <SelectItem value="loading" disabled>
-                                Loading operators...
-                              </SelectItem>
+                              <div className="py-8 flex flex-col items-center justify-center text-muted-foreground">
+                                <Loader2 className="w-6 h-6 animate-spin mb-2" />
+                                <p className="text-sm">Loading operators...</p>
+                              </div>
                             ) : Array.isArray(filteredOperators) && filteredOperators.length > 0 ? (
                               filteredOperators.map((operator) => (
                                 <SelectItem
@@ -785,12 +927,14 @@ const MobileRechargePostpaid = () => {
                               ))
                             ) : operatorSearchQuery ? (
                               <div className="py-6 text-center text-sm text-muted-foreground">
+                                <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
                                 No operators found for "{operatorSearchQuery}"
                               </div>
                             ) : (
-                              <SelectItem value="no-operators" disabled>
+                              <div className="py-6 text-center text-sm text-muted-foreground">
+                                <WifiOff className="w-8 h-8 mx-auto mb-2 opacity-50" />
                                 No postpaid operators available
-                              </SelectItem>
+                              </div>
                             )}
                           </div>
 
@@ -819,7 +963,7 @@ const MobileRechargePostpaid = () => {
                         required
                       >
                         <SelectTrigger className="h-12">
-                          <SelectValue placeholder={isLoadingCircles ? "Loading circles..." : "Select circle"} />
+                          <SelectValue placeholder={isLoadingCircles ? "Loading circles..." : "Select your circle/region"} />
                         </SelectTrigger>
                         <SelectContent>
                           {/* Search Input Inside Dropdown */}
@@ -856,9 +1000,10 @@ const MobileRechargePostpaid = () => {
                           {/* Circles List */}
                           <div className="max-h-[300px] overflow-y-auto">
                             {isLoadingCircles ? (
-                              <SelectItem value="loading" disabled>
-                                Loading circles...
-                              </SelectItem>
+                              <div className="py-8 flex flex-col items-center justify-center text-muted-foreground">
+                                <Loader2 className="w-6 h-6 animate-spin mb-2" />
+                                <p className="text-sm">Loading circles...</p>
+                              </div>
                             ) : Array.isArray(filteredCircles) && filteredCircles.length > 0 ? (
                               filteredCircles.map((circle) => (
                                 <SelectItem
@@ -870,12 +1015,14 @@ const MobileRechargePostpaid = () => {
                               ))
                             ) : circleSearchQuery ? (
                               <div className="py-6 text-center text-sm text-muted-foreground">
+                                <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
                                 No circles found for "{circleSearchQuery}"
                               </div>
                             ) : (
-                              <SelectItem value="no-circles" disabled>
+                              <div className="py-6 text-center text-sm text-muted-foreground">
+                                <WifiOff className="w-8 h-8 mx-auto mb-2 opacity-50" />
                                 No circles available
-                              </SelectItem>
+                              </div>
                             )}
                           </div>
 
@@ -892,41 +1039,50 @@ const MobileRechargePostpaid = () => {
 
                   {/* Bill Details */}
                   {billDetails && (
-                    <div className="bg-muted/50 rounded-lg p-4 space-y-3 border border-primary/20">
-                      <div className="flex items-center gap-2 mb-2">
-                        <FileText className="w-5 h-5 text-primary" />
-                        <p className="font-semibold text-foreground">Bill Details</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Customer Name</p>
-                          <p className="font-medium text-foreground">{billDetails.userName}</p>
+                    <div className="bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg p-5 space-y-4 border-2 border-primary/30">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-2 rounded-full bg-primary/10">
+                          <Receipt className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Mobile Number</p>
-                          <p className="font-medium text-foreground">{billDetails.cellNumber}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Bill Date</p>
-                          <p className="font-medium text-foreground">{billDetails.billdate}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Due Date</p>
-                          <p className="font-medium text-foreground">{billDetails.dueDate}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Bill Amount</p>
-                          <p className="font-bold text-lg text-primary">₹{billDetails.billAmount.toFixed(2)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Net Amount</p>
-                          <p className="font-bold text-lg text-primary">₹{billDetails.billnetamount.toFixed(2)}</p>
+                          <p className="font-semibold text-foreground text-lg">Bill Details</p>
+                          <p className="text-xs text-muted-foreground">Fetched successfully</p>
                         </div>
                       </div>
-                      <p className="text-xs text-blue-600 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        Partial payment allowed - Pay any amount
-                      </p>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="bg-background/50 rounded-md p-3">
+                          <p className="text-muted-foreground text-xs mb-1">Customer Name</p>
+                          <p className="font-semibold text-foreground">{billDetails.userName}</p>
+                        </div>
+                        <div className="bg-background/50 rounded-md p-3">
+                          <p className="text-muted-foreground text-xs mb-1">Mobile Number</p>
+                          <p className="font-semibold text-foreground font-mono">{billDetails.cellNumber}</p>
+                        </div>
+                        <div className="bg-background/50 rounded-md p-3">
+                          <p className="text-muted-foreground text-xs mb-1">Bill Date</p>
+                          <p className="font-semibold text-foreground">{billDetails.billdate}</p>
+                        </div>
+                        <div className="bg-background/50 rounded-md p-3">
+                          <p className="text-muted-foreground text-xs mb-1">Due Date</p>
+                          <p className="font-semibold text-foreground">{billDetails.dueDate}</p>
+                        </div>
+                        <div className="bg-background/50 rounded-md p-3">
+                          <p className="text-muted-foreground text-xs mb-1">Bill Amount</p>
+                          <p className="font-bold text-xl text-primary">₹{billDetails.billAmount.toLocaleString('en-IN')}</p>
+                        </div>
+                        <div className="bg-background/50 rounded-md p-3">
+                          <p className="text-muted-foreground text-xs mb-1">Net Amount</p>
+                          <p className="font-bold text-xl text-primary">₹{billDetails.billnetamount.toLocaleString('en-IN')}</p>
+                        </div>
+                      </div>
+                      {billDetails.acceptPartPay && (
+                        <div className="flex items-center gap-2 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md p-3">
+                          <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+                          <p className="text-xs text-green-700 dark:text-green-300 font-medium">
+                            Partial payment allowed - You can pay any amount
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -936,7 +1092,7 @@ const MobileRechargePostpaid = () => {
                       htmlFor="amount"
                       className="text-sm font-medium text-foreground"
                     >
-                      Amount <span className="text-red-500">*</span>
+                      Payment Amount <span className="text-red-500">*</span>
                     </Label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">
@@ -945,7 +1101,7 @@ const MobileRechargePostpaid = () => {
                       <Input
                         id="amount"
                         type="number"
-                        placeholder="Enter amount"
+                        placeholder={billDetails ? "Enter payment amount" : "Fetch bill first"}
                         value={rechargeForm.amount}
                         onChange={(e) =>
                           setRechargeForm({
@@ -962,23 +1118,33 @@ const MobileRechargePostpaid = () => {
                     </div>
                     {billDetails && parseFloat(rechargeForm.amount) > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        Bill amount: ₹{billDetails.billAmount.toFixed(2)} • You can pay any amount
+                        {parseFloat(rechargeForm.amount) === billDetails.billAmount 
+                          ? `Paying full bill amount: ₹${billDetails.billAmount.toLocaleString('en-IN')}`
+                          : `Paying ₹${parseFloat(rechargeForm.amount).toLocaleString('en-IN')} of ₹${billDetails.billAmount.toLocaleString('en-IN')} bill`
+                        }
+                      </p>
+                    )}
+                    {!billDetails && (
+                      <p className="text-xs text-amber-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Please fetch bill details before entering amount
                       </p>
                     )}
                   </div>
 
                   {/* Information Box */}
-                  <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-                    <p className="text-sm font-medium text-foreground">
-                      Important Information:
+                  <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
+                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      Important Information
                     </p>
-                    <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                      <li>Fetch bill details before making payment</li>
-                      <li>Ensure you have sufficient balance in your account</li>
-                      <li>Payment will be processed instantly</li>
-                      <li>Check your mobile number carefully before submitting</li>
-                      <li>Transaction once done cannot be reversed</li>
-                      <li>For any issues, contact support immediately</li>
+                    <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-disc list-inside ml-1">
+                      <li>Always fetch bill details before making payment</li>
+                      <li>Ensure you have sufficient balance in your wallet</li>
+                      <li>Payment will be processed instantly upon confirmation</li>
+                      <li>Double-check the mobile number before submitting</li>
+                      <li>Completed transactions cannot be reversed or cancelled</li>
+                      <li>Contact support immediately if you face any issues</li>
                     </ul>
                   </div>
 
@@ -998,32 +1164,13 @@ const MobileRechargePostpaid = () => {
                   >
                     {isLoading ? (
                       <span className="flex items-center gap-2">
-                        <svg
-                          className="animate-spin h-4 w-4"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          ></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          ></path>
-                        </svg>
-                        Processing Payment...
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Processing Your Payment...
                       </span>
                     ) : (
                       <>
                         <Smartphone className="w-4 h-4 mr-2" />
-                        Pay Bill Now
+                        Pay Bill ₹{rechargeForm.amount || '0'} Now
                       </>
                     )}
                   </Button>
@@ -1044,9 +1191,10 @@ const MobileRechargePostpaid = () => {
                     size="sm"
                     onClick={fetchRechargeHistory}
                     disabled={isLoadingHistory}
+                    title="Refresh payment history"
                   >
                     {isLoadingHistory ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <>
                         <RefreshCw className="w-4 h-4 mr-1" />
@@ -1055,17 +1203,28 @@ const MobileRechargePostpaid = () => {
                     )}
                   </Button>
                 </CardTitle>
+                <p className="text-sm text-white/90">
+                  View your last 10 postpaid bill payments
+                </p>
               </CardHeader>
 
               <CardContent className="pt-6">
                 {isLoadingHistory ? (
-                  <div className="flex items-center justify-center py-8">
-                    <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary mb-3" />
+                    <p className="text-sm text-muted-foreground">Loading your payment history...</p>
                   </div>
                 ) : rechargeHistory.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Smartphone className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No postpaid payment history found</p>
+                  <div className="text-center py-12">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                      <Smartphone className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <p className="text-lg font-semibold text-foreground mb-2">
+                      No Payment History
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Your postpaid bill payments will appear here
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1076,8 +1235,8 @@ const MobileRechargePostpaid = () => {
                       >
                         <div className="flex items-start justify-between">
                           <div className="space-y-1 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold text-base">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-base font-mono">
                                 {history.mobile_number}
                               </p>
                               {getStatusBadge(history.recharge_status)}
@@ -1086,16 +1245,28 @@ const MobileRechargePostpaid = () => {
                               {history.operator_name} • {history.circle_name}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {new Date(history.created_at).toLocaleString()}
+                              {new Date(history.created_at).toLocaleString('en-IN', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
                             </p>
+                            {history.order_id && (
+                              <p className="text-xs text-muted-foreground font-mono">
+                                Order: {history.order_id}
+                              </p>
+                            )}
                           </div>
                           <div className="text-right">
                             <p className="font-bold text-lg text-primary">
-                              ₹{history.amount.toFixed(2)}
+                              ₹{history.amount.toLocaleString('en-IN')}
                             </p>
                             {history.commission > 0 && (
-                              <p className="text-xs text-green-600">
-                                Commission: ₹{history.commission.toFixed(2)}
+                              <p className="text-xs text-green-600 flex items-center gap-1 justify-end">
+                                <CheckCircle2 className="w-3 h-3" />
+                                +₹{history.commission.toFixed(2)} earned
                               </p>
                             )}
                           </div>
