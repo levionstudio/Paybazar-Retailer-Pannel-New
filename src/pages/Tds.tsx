@@ -94,7 +94,6 @@ const TDSCommissionPage = () => {
 
   // Decode token
   useEffect(() => {
-    console.log("🔐 Checking authentication token...");
     
     if (!token) {
       console.error("❌ No authentication token found");
@@ -105,10 +104,8 @@ const TDSCommissionPage = () => {
 
     try {
       const decoded = jwtDecode<DecodedToken>(token);
-      console.log("✅ Token decoded successfully:", { user_id: decoded.user_id });
       
       if (!decoded.exp || decoded.exp * 1000 < Date.now()) {
-        console.error("❌ Token has expired");
         toast.error("Session expired. Please login again.");
         localStorage.removeItem("authToken");
         navigate("/login");
@@ -117,9 +114,8 @@ const TDSCommissionPage = () => {
       
       setUserId(decoded.user_id);
       setUserName(decoded.user_name);
-      console.log("✅ User ID set:", decoded.user_id);
     } catch (error) {
-      console.error("❌ Error decoding token:", error);
+
       toast.error("Invalid token. Please login again.");
       navigate("/login");
     }
@@ -128,11 +124,9 @@ const TDSCommissionPage = () => {
   // Fetch ALL TDS commissions from API (no query params for filtering)
   const fetchAllTransactions = useCallback(async () => {
     if (!userId || !token) {
-      console.log("⏸️ Skipping fetch - waiting for user ID and token");
       return;
     }
 
-    console.log("🔄 Fetching all TDS commissions...");
     setLoading(true);
     setSearched(true);
     
@@ -144,11 +138,9 @@ const TDSCommissionPage = () => {
         }
       );
 
-      console.log("📦 TDS commissions API response:", response.data);
       
       const list: TDSCommission[] = response.data?.data?.tds_commisions || [];
       
-      console.log(`✅ Fetched ${list.length} TDS commissions`);
       
       // Sort by date (newest first)
       const sorted = list.sort(
@@ -163,7 +155,6 @@ const TDSCommissionPage = () => {
         toast.info("No TDS commissions found");
       }
     } catch (error: any) {
-      console.error("❌ Error fetching TDS commissions:", error);
       console.error("Error details:", {
         message: error.message,
         response: error.response?.data,

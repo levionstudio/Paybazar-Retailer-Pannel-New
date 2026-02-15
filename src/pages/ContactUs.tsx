@@ -113,7 +113,6 @@ const ContactUs = () => {
         ticket_description: formData.ticket_description.trim(),
       };
 
-      console.log("Submitting ticket:", payload);
 
       const response = await axios.post(
         `${import.meta.env.VITE_API_BASE_URL}/ticket/create`,

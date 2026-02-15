@@ -168,27 +168,17 @@ const MobileRechargePostpaid = () => {
   useEffect(() => {
     const fetchOperators = async () => {
       setIsLoadingOperators(true);
-      
-      console.log("=== FETCHING OPERATORS ===");
-      console.log("Endpoint:", `${API_BASE_URL}/mobile_recharge/get/operators`);
-      console.log("Headers:", getAuthHeaders());
-      console.log("==========================");
+
       
       try {
         const response = await axios.get(
           `${API_BASE_URL}/mobile_recharge/get/operators`,
           getAuthHeaders()
         );
-        
-        console.log("=== OPERATORS RESPONSE ===");
-        console.log("Status Code:", response.status);
-        console.log("Full Response:", JSON.stringify(response.data, null, 2));
-        console.log("==========================");
-        
+
         const operatorsData = response.data?.data?.operators || [];
         
-        console.log("Raw Operators Array:", JSON.stringify(operatorsData, null, 2));
-        console.log("Total Operators:", operatorsData.length);
+   
         
         if (!Array.isArray(operatorsData)) {
           console.error("❌ Invalid response format - operators is not an array");
@@ -200,20 +190,12 @@ const MobileRechargePostpaid = () => {
           const operatorName = operator.operator_name.toLowerCase();
           return operatorName.includes('postpaid');
         });
-        
-        console.log("=== FILTERED POSTPAID OPERATORS ===");
-        console.log("Postpaid Operators:", JSON.stringify(postpaidOperators, null, 2));
-        console.log("Total Postpaid Operators:", postpaidOperators.length);
-        console.log("===================================");
+ 
         
         setOperators(postpaidOperators);
         setFilteredOperators(postpaidOperators);
       } catch (error: any) {
-        console.log("=== OPERATORS FETCH ERROR ===");
-        console.error("Error Type:", error.name);
-        console.error("Error Message:", error.message);
-        console.error("Error Response:", JSON.stringify(error.response?.data, null, 2));
-        console.log("=============================");
+      
         
         setOperators([]);
         setFilteredOperators([]);
@@ -235,41 +217,27 @@ const MobileRechargePostpaid = () => {
     const fetchCircles = async () => {
       setIsLoadingCircles(true);
       
-      console.log("=== FETCHING CIRCLES ===");
-      console.log("Endpoint:", `${API_BASE_URL}/mobile_recharge/get/circle`);
-      console.log("Headers:", getAuthHeaders());
-      console.log("========================");
-      
+
       try {
         const response = await axios.get(
           `${API_BASE_URL}/mobile_recharge/get/circle`,
           getAuthHeaders()
         );
         
-        console.log("=== CIRCLES RESPONSE ===");
-        console.log("Status Code:", response.status);
-        console.log("Full Response:", JSON.stringify(response.data, null, 2));
-        console.log("========================");
+ 
         
         const circlesData = response.data?.data?.circles || [];
-        
-        console.log("Circles Array:", JSON.stringify(circlesData, null, 2));
-        console.log("Total Circles:", circlesData.length);
+ 
         
         if (!Array.isArray(circlesData)) {
-          console.error("❌ Invalid response format - circles is not an array");
+     
           throw new Error("Invalid response format");
         }
         
         setCircles(circlesData);
         setFilteredCircles(circlesData);
       } catch (error: any) {
-        console.log("=== CIRCLES FETCH ERROR ===");
-        console.error("Error Type:", error.name);
-        console.error("Error Message:", error.message);
-        console.error("Error Response:", JSON.stringify(error.response?.data, null, 2));
-        console.log("===========================");
-        
+     
         setCircles([]);
         setFilteredCircles([]);
         toast({
@@ -319,11 +287,7 @@ const MobileRechargePostpaid = () => {
 
     setIsLoadingHistory(true);
     
-    console.log("=== FETCHING POSTPAID RECHARGE HISTORY ===");
-    console.log("Endpoint:", `${API_BASE_URL}/bbps/recharge/get/${retailerId}`);
-    console.log("Retailer ID:", retailerId);
-    console.log("Headers:", getAuthHeaders());
-    console.log("==========================================");
+
     
     try {
       const response = await axios.get(
@@ -331,16 +295,11 @@ const MobileRechargePostpaid = () => {
         getAuthHeaders()
       );
       
-      console.log("=== POSTPAID HISTORY RESPONSE ===");
-      console.log("Status Code:", response.status);
-      console.log("Full Response:", JSON.stringify(response.data, null, 2));
-      console.log("=================================");
+
       
       // Backend returns: { status, message, data: { history: [...] } }
       const historyData = response.data?.data?.history || [];
-      
-      console.log("Postpaid Recharges:", JSON.stringify(historyData, null, 2));
-      console.log("Total Postpaid Recharges:", historyData.length);
+
       
       if (!Array.isArray(historyData)) {
         console.error("❌ Invalid response format - history is not an array");
@@ -348,15 +307,9 @@ const MobileRechargePostpaid = () => {
       }
       
       setRechargeHistory(historyData);
-      console.log("✅ Successfully loaded postpaid history");
+
     } catch (error: any) {
-      console.log("=== POSTPAID HISTORY FETCH ERROR ===");
-      console.error("Error Type:", error.name);
-      console.error("Error Message:", error.message);
-      console.error("Error Status:", error.response?.status);
-      console.error("Error Response:", JSON.stringify(error.response?.data, null, 2));
-      console.log("====================================");
-      
+
       setRechargeHistory([]);
       
       if (error.response?.status !== 404) {
@@ -366,7 +319,7 @@ const MobileRechargePostpaid = () => {
           variant: "destructive",
         });
       } else {
-        console.log("ℹ️ No postpaid history found (404)");
+ 
       }
     } finally {
       setIsLoadingHistory(false);
@@ -408,11 +361,7 @@ const MobileRechargePostpaid = () => {
       operator_code: parseInt(rechargeForm.operatorCode),
     };
 
-    console.log("=== FETCH BILL REQUEST ===");
-    console.log("Endpoint:", `${API_BASE_URL}/bbps/get/postpaid/balance`);
-    console.log("Request Payload:", JSON.stringify(requestPayload, null, 2));
-    console.log("Headers:", getAuthHeaders());
-    console.log("========================");
+  
 
     try {
       const response = await axios.post(
@@ -421,22 +370,13 @@ const MobileRechargePostpaid = () => {
         getAuthHeaders()
       );
 
-      console.log("=== FETCH BILL RESPONSE ===");
-      console.log("Status Code:", response.status);
-      console.log("Status Text:", response.statusText);
-      console.log("Full Response:", JSON.stringify(response.data, null, 2));
-      console.log("Response Headers:", response.headers);
-      console.log("===========================");
+
 
       // Backend returns: { status, message, data: { response: { error, msg, status, billAmount: [...] } } }
       // billAmount is an ARRAY with one object
       const billAmountArray = response.data?.data?.response?.billAmount;
 
-      console.log("=== PARSED BILL DATA ===");
-      console.log("Bill Amount Array:", JSON.stringify(billAmountArray, null, 2));
-      console.log("Is Array:", Array.isArray(billAmountArray));
-      console.log("Array Length:", billAmountArray?.length);
-      console.log("========================");
+   
 
       // Get first item from array
       const billData = Array.isArray(billAmountArray) && billAmountArray.length > 0 
@@ -444,12 +384,7 @@ const MobileRechargePostpaid = () => {
         : null;
 
       if (billData) {
-        console.log("=== EXTRACTED BILL DETAILS ===");
-        console.log("Raw Bill Data:", JSON.stringify(billData, null, 2));
-        console.log("Accept Payment:", billData.acceptPayment);
-        console.log("Accept Partial Payment:", billData.acceptPartPay);
-        console.log("Bill Amount (string):", billData.billAmount);
-        console.log("==============================");
+    
 
         // Parse string amounts to numbers
         const parsedBillData: BillDetails = {
@@ -463,10 +398,7 @@ const MobileRechargePostpaid = () => {
           userName: billData.userName,
         };
 
-        console.log("=== PARSED BILL DETAILS ===");
-        console.log("Bill Amount (number):", parsedBillData.billAmount);
-        console.log("Net Amount (number):", parsedBillData.billnetamount);
-        console.log("===========================");
+
 
         if (parsedBillData.acceptPayment) {
           setBillDetails(parsedBillData);
@@ -475,16 +407,13 @@ const MobileRechargePostpaid = () => {
             amount: parsedBillData.billAmount.toString(),
           });
           
-          console.log("✅ Bill fetched successfully");
-          console.log("Bill Amount:", parsedBillData.billAmount);
-          console.log("Customer Name:", parsedBillData.userName);
-          
+        
           toast({
             title: "Bill Fetched Successfully",
             description: `Bill amount: ₹${parsedBillData.billAmount.toFixed(2)}`,
           });
         } else {
-          console.log("❌ Bill payment not accepted");
+
           toast({
             title: "Bill Not Available",
             description: "This bill does not accept payment at the moment",
@@ -492,9 +421,7 @@ const MobileRechargePostpaid = () => {
           });
         }
       } else {
-        console.log("❌ No bill data found in response");
-        console.log("Error Code:", response.data?.data?.response?.error);
-        console.log("Message:", response.data?.data?.response?.msg);
+      
         
         toast({
           title: "Bill Not Available",
@@ -503,14 +430,7 @@ const MobileRechargePostpaid = () => {
         });
       }
     } catch (error: any) {
-      console.log("=== FETCH BILL ERROR ===");
-      console.error("Error Type:", error.name);
-      console.error("Error Message:", error.message);
-      console.error("Error Response Status:", error.response?.status);
-      console.error("Error Response Data:", JSON.stringify(error.response?.data, null, 2));
-      console.error("Error Response Headers:", error.response?.headers);
-      console.error("Full Error Object:", error);
-      console.log("========================");
+
       
       toast({
         title: "Error",
@@ -599,12 +519,7 @@ const MobileRechargePostpaid = () => {
       return;
     }
 
-    // No restriction on amount - user can pay any amount
-    console.log("=== PAYMENT VALIDATION ===");
-    console.log("Bill Amount:", billDetails?.billAmount);
-    console.log("Paying Amount:", amount);
-    console.log("Accept Partial Pay:", billDetails?.acceptPartPay);
-    console.log("==========================");
+
 
     setIsLoading(true);
 
@@ -619,12 +534,7 @@ const MobileRechargePostpaid = () => {
       partner_request_id: `POSTPAID_${Date.now()}`,
     };
 
-    console.log("=== POSTPAID PAYMENT REQUEST ===");
-    console.log("Endpoint:", `${API_BASE_URL}/bbps/create/postpaid`);
-    console.log("Request Payload:", JSON.stringify(requestPayload, null, 2));
-    console.log("Headers:", getAuthHeaders());
-    console.log("Bill Details:", JSON.stringify(billDetails, null, 2));
-    console.log("================================");
+
 
     try {
       const response = await axios.post(
@@ -633,48 +543,26 @@ const MobileRechargePostpaid = () => {
         getAuthHeaders()
       );
 
-      console.log("=== POSTPAID PAYMENT RESPONSE ===");
-      console.log("Status Code:", response.status);
-      console.log("Status Text:", response.statusText);
-      console.log("Full Response:", JSON.stringify(response.data, null, 2));
-      console.log("Response Headers:", response.headers);
-      console.log("=================================");
+ 
 
       if (response.status === 200 || response.status === 201) {
         const responseMessage = response.data?.message || "Postpaid bill payment successful";
         
-        console.log("✅ Payment successful");
-        console.log("Response Message:", responseMessage);
+
         
         toast({
           title: "Success",
           description: responseMessage,
         });
 
-        // Reset form
-        console.log("🔄 Resetting form and refreshing history");
-        setRechargeForm({
-          mobileNumber: "",
-          operatorCode: "",
-          operatorName: "",
-          circleCode: "",
-          circleName: "",
-          amount: "",
-        });
+     
         setBillDetails(null);
 
         // Refresh history
         fetchRechargeHistory();
       }
     } catch (error: any) {
-      console.log("=== POSTPAID PAYMENT ERROR ===");
-      console.error("Error Type:", error.name);
-      console.error("Error Message:", error.message);
-      console.error("Error Response Status:", error.response?.status);
-      console.error("Error Response Data:", JSON.stringify(error.response?.data, null, 2));
-      console.error("Error Response Headers:", error.response?.headers);
-      console.error("Full Error Object:", error);
-      console.log("==============================");
+
 
       let errorMessage = "Failed to process payment. Please try again.";
 
@@ -688,7 +576,7 @@ const MobileRechargePostpaid = () => {
         errorMessage = "Insufficient balance";
       }
 
-      console.log("❌ Displaying error:", errorMessage);
+
 
       toast({
         title: "Error",

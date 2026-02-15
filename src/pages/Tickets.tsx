@@ -148,7 +148,6 @@ const MyTickets = () => {
         }
       );
 
-      console.log("API Response:", response.data);
 
       if (response.data && response.data.status === "success") {
         const ticketsList = response.data.data || [];

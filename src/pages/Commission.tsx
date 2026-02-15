@@ -40,7 +40,6 @@ const MyCommission = () => {
 
   const handleDownload = (format: "csv" | "pdf") => {
     // Implementation for download functionality
-    console.log(`Downloading ${format} report...`);
   };
 
   return (

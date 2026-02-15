@@ -94,7 +94,7 @@ const RequestFunds = () => {
           }
         );
 
-        console.log("Admin Banks API:", res.data);
+
 
         if (
           res.data?.status === "success" &&

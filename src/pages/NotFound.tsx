@@ -10,10 +10,7 @@ const NotFound = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    console.log(
-      "User attempted to access route:",
-      location.pathname
-    );
+
   }, [location.pathname]);
 
   return (

@@ -55,14 +55,12 @@ export default function UtilityPayments() {
   });
 
   const handleServiceClick = (service: (typeof utilityServices)[0]) => {
-    console.log("Selected service:", service.name);
     
     // Navigate to the service route
     if (service.route) {
       navigate(service.route);
     } else {
       // If no route is defined, show a toast or message
-      console.log(`Route not configured for ${service.name}`);
     }
   };
 

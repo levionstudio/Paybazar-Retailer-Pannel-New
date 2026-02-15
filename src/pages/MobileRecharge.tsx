@@ -181,10 +181,7 @@ const MobileRecharge = () => {
         
         // Backend returns: { status, message, data: { operators: [...] } }
         const operatorsData = response.data?.data?.operators || [];
-        
-        console.log("Operators response:", response.data);
-        console.log("Raw operators:", operatorsData);
-        
+    
         if (!Array.isArray(operatorsData)) {
           throw new Error("Invalid response format");
         }
@@ -195,7 +192,7 @@ const MobileRecharge = () => {
           return !operatorName.includes('postpaid');
         });
         
-        console.log("Prepaid operators:", prepaidOperators);
+
         setOperators(prepaidOperators);
         setFilteredOperators(prepaidOperators);
       } catch (error: any) {
@@ -227,9 +224,7 @@ const MobileRecharge = () => {
         
         // Backend returns: { status, message, data: { circles: [...] } }
         const circlesData = response.data?.data?.circles || [];
-        
-        console.log("Circles response:", response.data);
-        console.log("Processed circles:", circlesData);
+
         
         if (!Array.isArray(circlesData)) {
           throw new Error("Invalid response format");
@@ -296,8 +291,7 @@ const MobileRecharge = () => {
       // Backend returns: { status, message, data: { recharges: [...] } }
       const historyData = response.data?.data?.recharges || [];
       
-      console.log("History response:", response.data);
-      console.log("Processed history:", historyData);
+    
       
       if (!Array.isArray(historyData)) {
         throw new Error("Invalid response format");
@@ -346,7 +340,7 @@ const MobileRecharge = () => {
         circle: parseInt(rechargeForm.circleCode), // Send circle_code as 'circle'
       };
 
-      console.log("Plans request body:", requestBody);
+
 
       // CORRECT: axios.post(url, data, config)
       const response = await axios.post(
@@ -355,7 +349,7 @@ const MobileRecharge = () => {
         getAuthHeaders()       // Auth headers as third parameter
       );
 
-      console.log("Plans response:", response.data);
+
 
       // Backend returns: { status: "success", message: "...", data: { error, msg, planData: [...], status } }
       // planData is an array with one object containing circle_id and plan object
@@ -365,7 +359,7 @@ const MobileRecharge = () => {
         const planData = apiData.planData[0]; // Get first item from planData array
         const planObject = planData.plan; // This is an object with category keys
         
-        console.log("Plan object:", planObject);
+
         
         // Convert the plan object to a flat array of plans with category info
         const allPlans: Plan[] = [];
@@ -387,8 +381,7 @@ const MobileRecharge = () => {
           }
         });
         
-        console.log("Processed plans:", allPlans);
-        console.log("Total plans found:", allPlans.length);
+
         
         if (allPlans.length > 0) {
           setPlans(allPlans);
@@ -401,7 +394,7 @@ const MobileRecharge = () => {
           });
         }
       } else {
-        console.log("No plans found in response");
+   
         toast({
           title: "No Plans Found",
           description: response.data?.message || "No plans available for this selection",

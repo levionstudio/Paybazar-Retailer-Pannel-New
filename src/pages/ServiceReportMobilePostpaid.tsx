@@ -313,9 +313,6 @@ const applyFrontendFilters = (
     const token = localStorage.getItem("authToken");
     setLoading(true);
 
-    console.log("=== FETCHING POSTPAID REPORT ===");
-    console.log("Endpoint:", `${import.meta.env.VITE_API_BASE_URL}/bbps/recharge/get/${retailerId}`);
-    console.log("================================");
 
     try {
       const offset = (currentPage - 1) * entriesPerPage;
@@ -336,10 +333,6 @@ const applyFrontendFilters = (
         }
       );
 
-      console.log("=== POSTPAID REPORT RESPONSE ===");
-      console.log("Status:", response.status);
-      console.log("Data:", JSON.stringify(response.data, null, 2));
-      console.log("================================");
 
       if (
         response.data?.status === "success" &&
@@ -398,17 +391,12 @@ const paginated = frontendFiltered.slice(
 
 setTransactions(paginated);
 
-        console.log("✅ Loaded", sortedTransactions.length, "postpaid transactions");
       } else {
         setTransactions([]);
         setTotalRecords(0);
-        console.log("❌ No postpaid transactions found");
       }
     } catch (error: any) {
-      console.error("=== POSTPAID REPORT ERROR ===");
-      console.error("Error:", error);
-      console.error("Response:", error.response?.data);
-      console.error("=============================");
+
       
       setTransactions([]);
       setTotalRecords(0);

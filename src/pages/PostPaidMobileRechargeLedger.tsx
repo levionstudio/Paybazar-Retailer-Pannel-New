@@ -233,9 +233,6 @@ export default function PostpaidMobileRechargeLedger({ userId }: PostpaidMobileR
     const token = localStorage.getItem("authToken");
     setLoading(true);
 
-    console.log("=== FETCHING POSTPAID LEDGER ===");
-    console.log("Endpoint:", `${import.meta.env.VITE_API_BASE_URL}/bbps/recharge/get/${userId}`);
-    console.log("===============================");
 
     try {
       // Build query params - REMOVE search and status
@@ -251,10 +248,7 @@ export default function PostpaidMobileRechargeLedger({ userId }: PostpaidMobileR
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      console.log("=== POSTPAID LEDGER RESPONSE ===");
-      console.log("Status:", response.status);
-      console.log("Data:", JSON.stringify(response.data, null, 2));
-      console.log("================================");
+
 
       if (response.data?.status === "success" && Array.isArray(response.data.data?.history)) {
         const raw: PostpaidRechargeTransaction[] = response.data.data.history || [];
@@ -265,17 +259,11 @@ export default function PostpaidMobileRechargeLedger({ userId }: PostpaidMobileR
         );
         
         setAllTransactions(sorted); // Store all data
-        console.log("✅ Loaded", sorted.length, "postpaid transactions");
       } else {
         setAllTransactions([]);
-        console.log("❌ No postpaid transactions found");
       }
     } catch (error: any) {
-      console.error("=== POSTPAID LEDGER ERROR ===");
-      console.error("Error:", error);
-      console.error("Response:", error.response?.data);
-      console.error("=============================");
-      
+
       setAllTransactions([]);
       toast({
         title: "Error",

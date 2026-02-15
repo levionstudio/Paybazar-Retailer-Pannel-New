@@ -366,7 +366,7 @@ const ElectricityBillPayment = () => {
   // Handle payment submission
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("=== Electricity Bill Payment Submission Started ===");
+    ("=== Electricity Bill Payment Submission Started ===");
 
     if (!retailerId) {
       console.error("Retailer ID not found");
@@ -378,8 +378,6 @@ const ElectricityBillPayment = () => {
       return;
     }
 
-    console.log("Retailer ID:", retailerId);
-    console.log("Form data:", paymentForm);
 
     // Validation
     if (!validateCustomerId(paymentForm.customerId)) {
@@ -413,7 +411,6 @@ const ElectricityBillPayment = () => {
       return;
     }
 
-    console.log("Validation passed");
     setIsLoading(true);
 
     try {
@@ -426,9 +423,6 @@ const ElectricityBillPayment = () => {
         amount: amount,
       };
 
-      console.log("Request URL:", `${API_BASE_URL}/bbps/create/electricity`);
-      console.log("Request body:", requestBody);
-      console.log("Request headers:", getAuthHeaders());
 
       const response = await axios.post(
         `${API_BASE_URL}/bbps/create/electricity`,
@@ -436,14 +430,12 @@ const ElectricityBillPayment = () => {
         getAuthHeaders()
       );
 
-      console.log("Response status:", response.status);
-      console.log("Response data:", response.data);
+
 
       // Backend returns: { status: "success", message: "electricity bill paid successfully" }
       if (response.status === 200 || response.status === 201) {
         const responseMessage = response.data?.message || "Electricity bill paid successfully";
         
-        console.log("Payment successful:", responseMessage);
         
         toast({
           title: "Success",
@@ -451,7 +443,6 @@ const ElectricityBillPayment = () => {
         });
 
         // Reset form
-        console.log("Resetting form");
         setPaymentForm({
           customerId: "",
           customerEmail: "",
@@ -463,7 +454,7 @@ const ElectricityBillPayment = () => {
         setBillDetails(null);
 
         // Refresh history
-        console.log("Refreshing payment history");
+
         fetchPaymentHistory();
       }
     } catch (error: any) {
@@ -497,7 +488,6 @@ const ElectricityBillPayment = () => {
         variant: "destructive",
       });
     } finally {
-      console.log("=== Electricity Bill Payment Submission Ended ===");
       setIsLoading(false);
     }
   };

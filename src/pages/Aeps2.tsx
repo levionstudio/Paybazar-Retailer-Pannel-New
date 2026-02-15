@@ -14,7 +14,6 @@ export default function AepsKyc() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Handle form submission
-    console.log("KYC form submitted");
   };
 
   const navigate = useNavigate();

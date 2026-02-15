@@ -109,29 +109,50 @@ export default function Settlement() {
         }
       );
 
-      console.log("=== Fetch Beneficiaries Response ===");
-      console.log("Response:", response.data);
-      console.log("====================================");
-
-   if (
-  response.data.status === "success" &&
-  response.data.data?.beneficieries
-) {
-  setBeneficiaries(response.data.data.beneficieries);
-} else {
-  setBeneficiaries([]);
-}
+      if (
+        response.data.status === "success" &&
+        response.data.data?.beneficieries
+      ) {
+        setBeneficiaries(response.data.data.beneficieries);
+        
+        // User-friendly success message only if beneficiaries exist
+        if (response.data.data.beneficieries.length > 0) {
+          toast({
+            title: "✓ Beneficiaries Loaded",
+            description: `Found ${response.data.data.beneficieries.length} beneficiary${response.data.data.beneficieries.length > 1 ? 'ies' : ''} for this account`,
+          });
+        }
+      } else {
+        setBeneficiaries([]);
+      }
 
     } catch (error: any) {
       console.error("Error fetching beneficiaries:", error);
       setBeneficiaries([]);
-      if (error.response?.status !== 404) {
-        toast({
-          title: "Error",
-          description: "Failed to fetch beneficiaries",
-          variant: "destructive",
-        });
+      
+      if (error.response?.status === 404) {
+        // Don't show error toast for 404 - it's expected when no beneficiaries exist
+        return;
       }
+      
+      // User-friendly error messages based on error type
+      let errorMessage = "Unable to load beneficiaries. Please try again.";
+      
+      if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+        errorMessage = "Request timed out. Please check your connection and try again.";
+      } else if (error.response?.status === 401) {
+        errorMessage = "Your session has expired. Please log in again.";
+      } else if (error.response?.status === 500) {
+        errorMessage = "Server error. Please try again in a few moments.";
+      } else if (!navigator.onLine) {
+        errorMessage = "No internet connection. Please check your network.";
+      }
+      
+      toast({
+        title: "⚠️ Error Loading Beneficiaries",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setFetchingBeneficiaries(false);
     }
@@ -144,17 +165,14 @@ export default function Settlement() {
 
       try {
         const decoded: DecodedToken = jwtDecode(token);
-        console.log("=== Decoded Token ===");
-        console.log("Token Data:", decoded);
-        console.log("User ID:", decoded.user_id);
-        console.log("User Name:", decoded.user_name);
-        console.log("User Role:", decoded.user_role);
-        console.log("Admin ID:", decoded.admin_id);
-        console.log("=====================");
-        
         setTokenData(decoded);
       } catch (error) {
         console.error("Error decoding token:", error);
+        toast({
+          title: "⚠️ Session Error",
+          description: "Unable to verify your session. Please log in again.",
+          variant: "destructive",
+        });
       }
     };
 
@@ -165,8 +183,6 @@ export default function Settlement() {
     if (showSuccessAnimation && transactionId) {
       const timer = setTimeout(() => {
         setShowSuccessAnimation(false);
-        // Stay on the current page - beneficiaries list remains visible
-        // Transaction list refreshes automatically in submitPayout
       }, 3500);
 
       return () => clearTimeout(timer);
@@ -176,8 +192,17 @@ export default function Settlement() {
   const handleLogin = async () => {
     if (!payoutPhoneNumber) {
       toast({
-        title: "Error",
-        description: "Please enter Phone Number",
+        title: "⚠️ Missing Information",
+        description: "Please enter your 10-digit mobile number to continue",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (payoutPhoneNumber.length !== 10) {
+      toast({
+        title: "⚠️ Invalid Mobile Number",
+        description: "Mobile number must be exactly 10 digits",
         variant: "destructive",
       });
       return;
@@ -191,10 +216,6 @@ export default function Settlement() {
       if (token) {
         try {
           const decoded: DecodedToken = jwtDecode(token);
-          console.log("=== Login - Decoded Token ===");
-          console.log("Token Data:", decoded);
-          console.log("=============================");
-          
           setTokenData(decoded);
         } catch (error) {
           console.error("Error checking token:", error);
@@ -204,13 +225,21 @@ export default function Settlement() {
       await fetchBeneficiaries(payoutPhoneNumber);
       
       toast({
-        title: "Login Successful",
-        description: "Welcome to Payout Services",
+        title: "✓ Login Successful",
+        description: `Welcome! You can now manage payouts for ${payoutPhoneNumber}`,
       });
     } catch (error: any) {
+      let errorMessage = "Unable to log in. Please try again.";
+      
+      if (error.response?.status === 401) {
+        errorMessage = "Invalid credentials. Please check your information.";
+      } else if (error.response?.status === 403) {
+        errorMessage = "Access denied. You don't have permission to access this service.";
+      }
+      
       toast({
-        title: "Login Failed",
-        description: error.response?.data?.message || "Invalid credentials",
+        title: "❌ Login Failed",
+        description: error.response?.data?.message || errorMessage,
         variant: "destructive",
       });
     }
@@ -246,8 +275,8 @@ export default function Settlement() {
 
       if (response.status === 204 || response.status === 200 || response.data?.status === "success") {
         toast({
-          title: "Success",
-          description: `${beneficiaryToDelete.beneficiary_name} deleted successfully`,
+          title: "✓ Beneficiary Deleted",
+          description: `${beneficiaryToDelete.beneficiary_name} has been successfully removed from your list`,
         });
         
         if (payoutPhoneNumber) {
@@ -258,15 +287,25 @@ export default function Settlement() {
         setBeneficiaryToDelete(null);
       } else {
         toast({
-          title: "Error",
-          description: response.data?.message || "Failed to delete beneficiary. Please try again.",
+          title: "❌ Deletion Failed",
+          description: response.data?.message || "Unable to delete beneficiary. Please try again.",
           variant: "destructive",
         });
       }
     } catch (error: any) {
+      let errorMessage = "Unable to delete beneficiary. Please try again.";
+      
+      if (error.response?.status === 404) {
+        errorMessage = "Beneficiary not found. It may have already been deleted.";
+      } else if (error.response?.status === 403) {
+        errorMessage = "You don't have permission to delete this beneficiary.";
+      } else if (error.response?.status === 500) {
+        errorMessage = "Server error occurred. Please try again in a moment.";
+      }
+      
       toast({
-        title: "Error",
-        description: error.response?.data?.message || "Failed to delete beneficiary. Please try again.",
+        title: "❌ Deletion Failed",
+        description: error.response?.data?.message || errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -294,7 +333,7 @@ export default function Settlement() {
     e.preventDefault();
 
     if (verifiedMpin.length !== 4) {
-      setMpinVerificationError("MPIN must be exactly 4 digits.");
+      setMpinVerificationError("Please enter your complete 4-digit MPIN");
       return;
     }
 
@@ -307,10 +346,39 @@ export default function Settlement() {
   const handlePaySubmit = async () => {
     if (!selectedBeneficiary) return;
 
-    if (!payFormData.transactionType || !payFormData.amount) {
+    // Validate all fields with user-friendly messages
+    if (!payFormData.transactionType) {
       toast({
-        title: "Error",
-        description: "Please fill all fields",
+        title: "⚠️ Missing Information",
+        description: "Please select a transfer type (IMPS or NEFT)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!payFormData.amount) {
+      toast({
+        title: "⚠️ Missing Information",
+        description: "Please enter the payout amount",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const amount = parseFloat(payFormData.amount);
+    if (amount <= 0) {
+      toast({
+        title: "⚠️ Invalid Amount",
+        description: "Payout amount must be greater than ₹0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (amount > 200000) {
+      toast({
+        title: "⚠️ Amount Too High",
+        description: "Maximum payout amount is ₹2,00,000 per transaction",
         variant: "destructive",
       });
       return;
@@ -326,8 +394,8 @@ export default function Settlement() {
 
     if (!verifiedMpin || verifiedMpin.length !== 4) {
       toast({
-        title: "Error",
-        description: "Please verify your MPIN first.",
+        title: "⚠️ MPIN Required",
+        description: "Please enter your 4-digit MPIN to authorize this transaction",
         variant: "destructive",
       });
       setShowMpinVerificationDialog(true);
@@ -340,31 +408,26 @@ export default function Settlement() {
       
       if (!tokenData?.user_id || !tokenData?.admin_id) {
         toast({
-          title: "Error",
-          description: "User ID not found. Please log in again.",
+          title: "⚠️ Session Error",
+          description: "Your session has expired. Please log in again to continue.",
           variant: "destructive",
         });
         setLoading(false);
         return;
       }
       
-      // ✅ CORRECTED PAYLOAD - Matches backend CreatePayoutRequestModel exactly
       const payload = {
         admin_id: tokenData.admin_id,
         retailer_id: tokenData.user_id,
         mobile_number: selectedBeneficiary.mobile_number,
-        ifsc_code: selectedBeneficiary.ifsc_code,  // ✅ Changed from beneficiary_ifsc_code
-        bank_name: selectedBeneficiary.bank_name,  // ✅ Changed from beneficiary_bank_name
-        account_number: selectedBeneficiary.account_number,  // ✅ Changed from beneficiary_account_number
+        ifsc_code: selectedBeneficiary.ifsc_code,
+        bank_name: selectedBeneficiary.bank_name,
+        account_number: selectedBeneficiary.account_number,
         beneficiary_name: selectedBeneficiary.beneficiary_name,
         amount: parseFloat(payFormData.amount),
-        transfer_type: parseInt(payFormData.transactionType),  // ✅ Convert to int (5=IMPS, 6=NEFT)
+        transfer_type: parseInt(payFormData.transactionType),
         mpin: parseInt(verifiedMpin),
       };
-
-      console.log("=== Payout Request Payload ===");
-      console.log("Payload:", payload);
-      console.log("==============================");
 
       const response = await axios.post(
         `${import.meta.env.VITE_API_BASE_URL}/payout/create`,
@@ -376,10 +439,6 @@ export default function Settlement() {
           },
         }
       );
-
-      console.log("=== Payout Response ===");
-      console.log("Response:", response.data);
-      console.log("=======================");
 
       const txnId = response.data?.data?.orderid || 
                     response.data?.data?.transaction_id || 
@@ -398,21 +457,53 @@ export default function Settlement() {
       if (payoutPhoneNumber) {
         await fetchBeneficiaries(payoutPhoneNumber);
       }
+      
+      // Additional success toast with transaction details
+      toast({
+        title: "✓ Payout Initiated Successfully",
+        description: `₹${payFormData.amount} sent to ${selectedBeneficiary.beneficiary_name}. Transaction ID: ${txnId}`,
+      });
+      
     } catch (error: any) {
-      console.error("=== Payout Error ===");
-      console.error("Error:", error.response?.data);
-      console.error("====================");
+      console.error("Payout error:", error.response?.data);
       
       setVerifiedMpin("");
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || "Invalid MPIN or request failed. Please try again.";
-      setMpinVerificationError(errorMessage);
       
-      if (error.response?.status === 401 || error.response?.status === 403 || error.response?.data?.message?.toLowerCase().includes("mpin")) {
+      // User-friendly error messages based on error type
+      let errorTitle = "❌ Transaction Failed";
+      let errorMessage = "Unable to process your payout. Please try again.";
+      
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        errorTitle = "🔒 Authentication Failed";
+        errorMessage = "Incorrect MPIN. Please try again.";
         setShowMpinVerificationDialog(true);
+      } else if (error.response?.data?.message?.toLowerCase().includes("mpin")) {
+        errorTitle = "🔒 Invalid MPIN";
+        errorMessage = "The MPIN you entered is incorrect. Please try again.";
+        setShowMpinVerificationDialog(true);
+      } else if (error.response?.data?.message?.toLowerCase().includes("insufficient")) {
+        errorTitle = "💰 Insufficient Balance";
+        errorMessage = "You don't have enough balance to complete this transaction.";
+      } else if (error.response?.data?.message?.toLowerCase().includes("limit")) {
+        errorTitle = "⚠️ Transaction Limit Exceeded";
+        errorMessage = "This transaction exceeds your daily limit. Please try a smaller amount.";
+      } else if (error.response?.data?.message?.toLowerCase().includes("beneficiary")) {
+        errorTitle = "⚠️ Beneficiary Issue";
+        errorMessage = "There's a problem with this beneficiary. Please verify the details.";
+      } else if (error.response?.status === 500) {
+        errorTitle = "⚠️ Server Error";
+        errorMessage = "Our service is temporarily unavailable. Please try again in a few moments.";
+      } else if (!navigator.onLine) {
+        errorTitle = "📡 No Internet Connection";
+        errorMessage = "Please check your internet connection and try again.";
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
       }
       
+      setMpinVerificationError(errorMessage);
+      
       toast({
-        title: "Error",
+        title: errorTitle,
         description: errorMessage,
         variant: "destructive",
       });
@@ -473,7 +564,7 @@ export default function Settlement() {
                             e.target.value.replace(/\D/g, "").slice(0, 10)
                           )
                         }
-                        placeholder="Enter Mobile Number"
+                        placeholder="Enter 10-digit mobile number"
                         className="h-12 border-2 border-border focus:border-primary transition-colors pr-10"
                         maxLength={10}
                         required
@@ -488,12 +579,18 @@ export default function Settlement() {
                         </button>
                       )}
                     </div>
+                    {payoutPhoneNumber && payoutPhoneNumber.length < 10 && (
+                      <p className="text-xs text-muted-foreground">
+                        {10 - payoutPhoneNumber.length} more digit{10 - payoutPhoneNumber.length > 1 ? 's' : ''} required
+                      </p>
+                    )}
                   </div>
                   <Button
                     type="submit"
                     className="w-full h-12 paybazaar-gradient text-white hover:opacity-90 shadow-lg font-semibold"
+                    disabled={payoutPhoneNumber.length !== 10}
                   >
-                    Submit
+                    Continue to Payout Services
                   </Button>
                 </form>
               </div>
@@ -528,7 +625,7 @@ export default function Settlement() {
                 onClick={() => setShowAddBeneficiary(true)}
                 className="bg-white text-primary hover:bg-white/90"
               >
-                + Add Bene
+                + Add Beneficiary
               </Button>
             </div>
           </div>
@@ -559,7 +656,7 @@ export default function Settlement() {
                     </span>
                     <Input
                       className="w-56 h-9 bg-white/10 border-white/20 text-white placeholder:text-white/60 focus:bg-white/20"
-                      placeholder="Search..."
+                      placeholder="Search beneficiaries..."
                     />
                   </div>
                 </div>
@@ -599,7 +696,7 @@ export default function Settlement() {
                           <TableCell colSpan={7} className="text-center py-16">
                             <div className="flex flex-col items-center justify-center">
                               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
-                              <p className="text-sm text-muted-foreground">Loading beneficiaries...</p>
+                              <p className="text-sm text-muted-foreground">Loading your beneficiaries...</p>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -613,9 +710,15 @@ export default function Settlement() {
                               <p className="text-lg font-semibold text-foreground mb-2">
                                 No beneficiaries found
                               </p>
-                              <p className="text-sm text-muted-foreground">
-                                Click "+ Add Bene" to add a new beneficiary
+                              <p className="text-sm text-muted-foreground mb-4">
+                                Start by adding your first beneficiary to send payouts
                               </p>
+                              <Button
+                                onClick={() => setShowAddBeneficiary(true)}
+                                className="paybazaar-gradient text-white"
+                              >
+                                + Add Your First Beneficiary
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -707,11 +810,16 @@ export default function Settlement() {
 
               <div className="text-center space-y-3">
                 <h2 className="text-3xl font-bold text-gray-900">
-                  Success!
+                  Payment Successful! 🎉
                 </h2>
                 <p className="text-lg text-gray-600">
-                  Payout completed successfully
+                  Your payout has been processed successfully
                 </p>
+                {transactionId && (
+                  <p className="text-sm text-gray-500 font-mono">
+                    Transaction ID: {transactionId}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -730,10 +838,10 @@ export default function Settlement() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
-              Delete Beneficiary
+              Delete Beneficiary?
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
-              <p>Are you sure you want to delete this beneficiary?</p>
+              <p>Are you sure you want to remove this beneficiary from your list?</p>
               {beneficiaryToDelete && (
                 <div className="mt-4 p-4 bg-muted rounded-lg border">
                   <p className="font-semibold text-foreground mb-2">
@@ -755,7 +863,7 @@ export default function Settlement() {
                   </div>
                 </div>
               )}
-              <p className="text-destructive font-medium">This action cannot be undone.</p>
+              <p className="text-destructive font-medium">⚠️ This action cannot be undone.</p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -773,7 +881,7 @@ export default function Settlement() {
               ) : (
                 <>
                   <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
+                  Yes, Delete
                 </>
               )}
             </AlertDialogAction>
@@ -785,48 +893,49 @@ export default function Settlement() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-xl font-semibold">
-              Payout Transaction
+              Send Payout
             </DialogTitle>
             <DialogDescription>
-              Complete the payout transaction details
+              Enter the transaction details to send money
             </DialogDescription>
           </DialogHeader>
 
           {selectedBeneficiary && (
             <div className="space-y-4 py-4">
               <div className="space-y-2 p-4 bg-muted rounded-lg">
-                <div className="grid grid-cols-2 gap-2 text-sm">
+                <p className="text-xs text-muted-foreground font-medium mb-2">SENDING TO:</p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-muted-foreground">
-                      Beneficiary Name:
+                    <span className="text-muted-foreground block text-xs mb-1">
+                      Beneficiary Name
                     </span>
-                    <p className="font-medium">
+                    <p className="font-semibold text-foreground">
                       {selectedBeneficiary.beneficiary_name}
                     </p>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Bank Name:</span>
-                    <p className="font-medium">
+                    <span className="text-muted-foreground block text-xs mb-1">Bank Name</span>
+                    <p className="font-semibold text-foreground">
                       {selectedBeneficiary.bank_name}
                     </p>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">IFSC:</span>
-                    <p className="font-medium">{selectedBeneficiary.ifsc_code}</p>
+                    <span className="text-muted-foreground block text-xs mb-1">IFSC Code</span>
+                    <p className="font-semibold text-foreground font-mono text-xs">{selectedBeneficiary.ifsc_code}</p>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">
-                      Account Number:
+                    <span className="text-muted-foreground block text-xs mb-1">
+                      Account Number
                     </span>
-                    <p className="font-medium">
+                    <p className="font-semibold text-foreground font-mono text-xs">
                       {selectedBeneficiary.account_number}
                     </p>
                   </div>
                   <div className="col-span-2">
-                    <span className="text-muted-foreground">
-                      Mobile Number:
+                    <span className="text-muted-foreground block text-xs mb-1">
+                      Mobile Number
                     </span>
-                    <p className="font-medium">
+                    <p className="font-semibold text-foreground font-mono">
                       {selectedBeneficiary.mobile_number}
                     </p>
                   </div>
@@ -834,7 +943,7 @@ export default function Settlement() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="transactionType">Transfer Type *</Label>
+                <Label htmlFor="transactionType">Transfer Mode *</Label>
                 <Select
                   value={payFormData.transactionType}
                   onValueChange={(value) =>
@@ -843,30 +952,48 @@ export default function Settlement() {
                   required
                 >
                   <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Select Transfer Type" />
+                    <SelectValue placeholder="Choose transfer method" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="5">IMPS</SelectItem>
-                    <SelectItem value="6">NEFT</SelectItem>
+                    <SelectItem value="5">
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">IMPS</span>
+                        <span className="text-xs text-muted-foreground">Instant transfer (24/7)</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="6">
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">NEFT</span>
+                        <span className="text-xs text-muted-foreground">Standard transfer (Working hours)</span>
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="amount">Amount (₹) *</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  value={payFormData.amount}
-                  onChange={(e) =>
-                    setPayFormData({ ...payFormData, amount: e.target.value })
-                  }
-                  placeholder="Enter amount"
-                  className="h-11"
-                  min="0"
-                  step="0.01"
-                  required
-                />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">₹</span>
+                  <Input
+                    id="amount"
+                    type="number"
+                    value={payFormData.amount}
+                    onChange={(e) =>
+                      setPayFormData({ ...payFormData, amount: e.target.value })
+                    }
+                    placeholder="Enter amount to send"
+                    className="h-11 pl-8"
+                    min="1"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                {payFormData.amount && parseFloat(payFormData.amount) > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    You're sending ₹{parseFloat(payFormData.amount).toLocaleString('en-IN')} to {selectedBeneficiary.beneficiary_name}
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -878,15 +1005,15 @@ export default function Settlement() {
             <Button
               onClick={handlePaySubmit}
               className="paybazaar-gradient text-white"
-              disabled={loading}
+              disabled={loading || !payFormData.transactionType || !payFormData.amount}
             >
               {loading ? (
                 <div className="flex items-center gap-2">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                  <span>Processing</span>
+                  <span>Processing...</span>
                 </div>
               ) : (
-                "Submit"
+                "Proceed to Payment"
               )}
             </Button>
           </DialogFooter>
@@ -916,16 +1043,16 @@ export default function Settlement() {
         >
           <DialogHeader>
             <DialogTitle className="text-xl font-semibold">
-              Enter Your MPIN
+              🔒 Verify Your MPIN
             </DialogTitle>
             <DialogDescription>
-              Please enter your 4-digit MPIN to submit the payout request.
+              Enter your 4-digit MPIN to authorize this payout transaction
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleMpinVerification} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="verifyMpin">MPIN</Label>
+              <Label htmlFor="verifyMpin" className="text-sm font-medium">Security PIN</Label>
               <Input
                 id="verifyMpin"
                 type="password"
@@ -933,19 +1060,25 @@ export default function Settlement() {
                 autoComplete="one-time-code"
                 value={verifiedMpin}
                 maxLength={4}
-                placeholder="Enter 4-digit MPIN"
+                placeholder="••••"
                 onChange={(event) => handleMpinVerificationInput(event.target.value)}
                 required
-                className="text-center tracking-[0.5em]"
+                className="text-center tracking-[0.5em] text-2xl h-14 font-bold"
                 disabled={loading}
                 autoFocus
               />
+              <p className="text-xs text-muted-foreground text-center">
+                Enter your 4-digit MPIN to confirm
+              </p>
             </div>
 
             {mpinVerificationError && (
-              <p className="text-sm text-destructive font-medium">
-                {mpinVerificationError}
-              </p>
+              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                <p className="text-sm text-destructive font-medium flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  {mpinVerificationError}
+                </p>
+              </div>
             )}
 
             <DialogFooter className="flex gap-3">
@@ -965,15 +1098,15 @@ export default function Settlement() {
               <Button
                 type="submit"
                 className="flex-1 paybazaar-gradient text-white hover:opacity-90"
-                disabled={loading}
+                disabled={loading || verifiedMpin.length !== 4}
               >
                 {loading ? (
                   <div className="flex items-center gap-2">
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                    <span>Processing</span>
+                    <span>Verifying...</span>
                   </div>
                 ) : (
-                  "Submit"
+                  "Confirm & Pay"
                 )}
               </Button>
             </DialogFooter>

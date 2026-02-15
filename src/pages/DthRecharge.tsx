@@ -82,7 +82,6 @@ const DTHRecharge = () => {
 
   // Extract retailer ID from JWT token
   useEffect(() => {
-    console.log("=== Extracting Retailer ID from JWT ===");
     const token = localStorage.getItem("authToken");
     
     if (!token) {
@@ -95,17 +94,14 @@ const DTHRecharge = () => {
       return;
     }
 
-    console.log("Token found, decoding...");
     
     try {
       const decoded: JwtPayload = jwtDecode(token);
-      console.log("Decoded JWT payload:", decoded);
       
       //@ts-ignore
       const userId =
         decoded.retailer_id || decoded.data?.user_id || decoded.user_id;
 
-      console.log("Extracted user ID:", userId);
 
       if (!userId) {
         console.error("User ID not found in token payload");
@@ -117,9 +113,7 @@ const DTHRecharge = () => {
         return;
       }
 
-      console.log("Setting retailer ID:", userId);
       setRetailerId(userId);
-      console.log("Retailer ID set successfully");
     } catch (error) {
       console.error("=== JWT Decode Error ===");
       console.error("Error:", error);
@@ -134,37 +128,29 @@ const DTHRecharge = () => {
   // Fetch operators
   useEffect(() => {
     const fetchOperators = async () => {
-      console.log("=== Fetching DTH Operators ===");
       setIsLoadingOperators(true);
       try {
         const url = `${API_BASE_URL}/dth_recharge/get/operators`;
-        console.log("Fetching from URL:", url);
-        console.log("Auth headers:", getAuthHeaders());
+     
 
         const response = await axios.get(
           url,
           getAuthHeaders()
         );
         
-        console.log("Operators API response:", response);
-        console.log("Response status:", response.status);
-        console.log("Response data:", response.data);
-        
+
         // Backend returns: { status, message, data: { operators: [...] } }
         const operatorsData = response.data?.data?.operators || [];
         
-        console.log("Extracted operators data:", operatorsData);
-        console.log("Operators count:", operatorsData.length);
+
         
         if (!Array.isArray(operatorsData)) {
           console.error("Invalid response format - operators is not an array");
           throw new Error("Invalid response format");
         }
         
-        console.log("Setting operators state with", operatorsData.length, "items");
         setOperators(operatorsData);
         setFilteredOperators(operatorsData);
-        console.log("Operators loaded successfully");
       } catch (error: any) {
         console.error("=== Error Fetching Operators ===");
         console.error("Error object:", error);
@@ -180,7 +166,6 @@ const DTHRecharge = () => {
           variant: "destructive",
         });
       } finally {
-        console.log("=== Operators Fetch Completed ===");
         setIsLoadingOperators(false);
       }
     };
@@ -205,65 +190,45 @@ const DTHRecharge = () => {
   // Fetch recharge history
   const fetchRechargeHistory = async () => {
     if (!retailerId) {
-      console.log("Skipping history fetch - no retailer ID");
       return;
     }
 
-    console.log("=== Fetching DTH Recharge History ===");
-    console.log("Retailer ID:", retailerId);
     setIsLoadingHistory(true);
     
     try {
       const url = `${API_BASE_URL}/dth_recharge/get/${retailerId}`;
-      console.log("Fetching from URL:", url);
-      console.log("Auth headers:", getAuthHeaders());
 
       const response = await axios.get(
         url,
         getAuthHeaders()
       );
-      
-      console.log("History API response:", response);
-      console.log("Response status:", response.status);
-      console.log("Response data:", response.data);
+
       
       // Backend returns: { status, message, data: { recharges: [...] } }
       const historyData = response.data?.data?.recharges || [];
-      
-      console.log("Extracted history data:", historyData);
-      console.log("History records count:", historyData.length);
-      
+
       if (!Array.isArray(historyData)) {
         console.error("Invalid response format - recharges is not an array");
         throw new Error("Invalid response format");
       }
       
-      console.log("Setting recharge history state with", historyData.length, "items");
       setRechargeHistory(historyData);
-      console.log("History loaded successfully");
     } catch (error: any) {
-      console.error("=== Error Fetching Recharge History ===");
       console.error("Error object:", error);
-      console.error("Error response:", error.response);
-      console.error("Error response data:", error.response?.data);
-      console.error("Error response status:", error.response?.status);
-      console.error("Error message:", error.message);
+;
       
       setRechargeHistory([]); // Set to empty array on error
       
       // Only show toast if it's not a "no data" error
       if (error.response?.status !== 404) {
-        console.log("Showing error toast (not 404)");
         toast({
           title: "Error",
           description: error.response?.data?.message || error.message || "Failed to load recharge history",
           variant: "destructive",
         });
       } else {
-        console.log("404 error - no history data available (not showing toast)");
       }
     } finally {
-      console.log("=== Recharge History Fetch Completed ===");
       setIsLoadingHistory(false);
     }
   };
@@ -276,20 +241,15 @@ const DTHRecharge = () => {
 
   // Handle operator change
   const handleOperatorChange = (value: string) => {
-    console.log("=== Operator Changed ===");
-    console.log("Selected operator code:", value);
-    
+
     const selectedOperator = operators.find(
       (op) => op.operator_code === value
     );
     
-    console.log("Found operator:", selectedOperator);
+
     
     if (selectedOperator) {
-      console.log("Updating form with operator:", {
-        operatorCode: value,
-        operatorName: selectedOperator.operator_name
-      });
+   
       
       setRechargeForm({
         ...rechargeForm,
@@ -311,7 +271,6 @@ const DTHRecharge = () => {
   // Handle recharge submission
   const handleRechargeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("=== DTH Recharge Submission Started ===");
 
     if (!retailerId) {
       console.error("Retailer ID not found");
@@ -323,8 +282,7 @@ const DTHRecharge = () => {
       return;
     }
 
-    console.log("Retailer ID:", retailerId);
-    console.log("Form data:", rechargeForm);
+
 
     // Validation
     if (!validateCustomerId(rechargeForm.customerId)) {
@@ -358,7 +316,6 @@ const DTHRecharge = () => {
       return;
     }
 
-    console.log("Validation passed");
     setIsLoading(true);
 
     try {
@@ -370,9 +327,7 @@ const DTHRecharge = () => {
         amount: amount,
       };
 
-      console.log("Request URL:", `${API_BASE_URL}/dth_recharge/create`);
-      console.log("Request body:", requestBody);
-      console.log("Request headers:", getAuthHeaders());
+
 
       const response = await axios.post(
         `${API_BASE_URL}/dth_recharge/create`,
@@ -380,14 +335,11 @@ const DTHRecharge = () => {
         getAuthHeaders()
       );
 
-      console.log("Response status:", response.status);
-      console.log("Response data:", response.data);
 
       // Backend returns: { status: "success", message: "dth recharge successfull" }
       if (response.status === 200 || response.status === 201) {
         const responseMessage = response.data?.message || "DTH recharge initiated successfully";
         
-        console.log("Recharge successful:", responseMessage);
         
         toast({
           title: "Success",
@@ -395,7 +347,6 @@ const DTHRecharge = () => {
         });
 
         // Reset form
-        console.log("Resetting form");
         setRechargeForm({
           customerId: "",
           operatorCode: "",
@@ -404,16 +355,12 @@ const DTHRecharge = () => {
         });
 
         // Refresh history
-        console.log("Refreshing recharge history");
         fetchRechargeHistory();
       }
     } catch (error: any) {
-      console.error("=== DTH Recharge Error ===");
+
       console.error("Error object:", error);
-      console.error("Error response:", error.response);
-      console.error("Error response data:", error.response?.data);
-      console.error("Error response status:", error.response?.status);
-      console.error("Error message:", error.message);
+   
 
       let errorMessage = "Failed to process recharge. Please try again.";
 
@@ -438,7 +385,6 @@ const DTHRecharge = () => {
         variant: "destructive",
       });
     } finally {
-      console.log("=== DTH Recharge Submission Ended ===");
       setIsLoading(false);
     }
   };
