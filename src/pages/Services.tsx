@@ -38,7 +38,7 @@ export default function Services() {
       title: "DMT",
       subtitle: "Domestic Money Transfer",
       icon: ArrowLeftRight,
-      status: "active",
+      status: "coming-soon",
       description: "Send money across India instantly",
       color: "bg-gradient-to-r from-indigo-600 to-indigo-400",
       category: "Transfer",
