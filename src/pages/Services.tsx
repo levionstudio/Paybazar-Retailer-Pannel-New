@@ -38,11 +38,11 @@ export default function Services() {
       title: "DMT",
       subtitle: "Domestic Money Transfer",
       icon: ArrowLeftRight,
-      status: "coming-soon",
+      status: "active",
       description: "Send money across India instantly",
       color: "bg-gradient-to-r from-indigo-600 to-indigo-400",
       category: "Transfer",
-      route: "/services",
+      route: "/dmt",
     },
     {
       id: "aeps1",
