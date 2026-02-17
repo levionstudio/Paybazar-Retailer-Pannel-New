@@ -586,8 +586,7 @@ export function AddBeneficiaryDialog({
             )}
           </div>
 
-          {/* Branch Name - Auto-filled from verification (optional field) */}
-          <div className="space-y-2">
+          {/* <div className="space-y-2">
             <Label htmlFor="branchName" className="text-sm font-medium">
               Branch Name {isVerified && <span className="text-xs text-muted-foreground">(Auto-filled)</span>}
             </Label>
@@ -602,7 +601,7 @@ export function AddBeneficiaryDialog({
               placeholder={isVerified ? "Auto-filled from verification" : "Enter branch name (optional)"}
               readOnly={isVerified}
             />
-          </div>
+          </div> */}
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3 pt-4">
