@@ -127,7 +127,7 @@ export function AddBeneficiaryDialog({
     bank.bank_name.toLowerCase().includes(bankSearchTerm.toLowerCase())
   );
 
-  // Verify Account Handler
+  // Verify Account Handler - CORRECTED
   const handleVerifyAccount = async () => {
     // Validation
     if (!formData.accountNumber) {
@@ -167,10 +167,10 @@ export function AddBeneficiaryDialog({
         throw new Error("Retailer ID not found. Please login again.");
       }
 
+      // ✅ CORRECTED: Match backend VerifyBeneficiaryRequestModel
       const payload = {
+        retailer_id: retailerId,
         mobile_number: mobileNumber,
-        bank_name: formData.bank,
-        beneficiary_name: formData.beneficiaryName,
         account_number: formData.accountNumber,
         ifsc_code: formData.ifsc,
       };
@@ -194,35 +194,40 @@ export function AddBeneficiaryDialog({
       console.log("Response:", response.data);
       console.log("===================================");
 
+      // Check if verification was successful
       if (response.data?.status === "success") {
+        // Extract the nested data: response.data.response.data
         const verifyResponse = response.data?.data?.response;
         const verificationData = verifyResponse?.data;
 
-        if (verificationData) {
+        if (verificationData && verificationData.c_name) {
+          // Auto-fill the form with verified data
           setFormData(prev => ({
             ...prev,
-            beneficiaryName: verificationData.c_name ?? "",
-            bank: verificationData.bank_name ?? prev.bank,
-            branchName: verificationData.branch_name ?? "",
+            beneficiaryName: verificationData.c_name || "",
+            bank: verificationData.bank_name || prev.bank,
+            branchName: verificationData.branch_name || "",
           }));
 
           setIsVerified(true);
 
           toast({
-            title: "Success",
-            description: `Account verified: ${verificationData.c_name}`,
+            title: "Verification Successful",
+            description: `Account verified for ${verificationData.c_name}`,
           });
         } else {
+          // Verification succeeded but no data returned
           setIsVerified(true);
           toast({
             title: "Verified",
-            description: "Account details verified",
+            description: "Account details verified. Please enter beneficiary name manually.",
           });
         }
       } else {
+        // Verification failed
         toast({
           title: "Verification Failed",
-          description: response.data?.message || "Unable to verify account",
+          description: response.data?.message || "Unable to verify account. Please enter details manually.",
           variant: "destructive",
         });
       }
@@ -570,6 +575,7 @@ export function AddBeneficiaryDialog({
           <div className="space-y-2">
             <Label htmlFor="beneficiaryName" className="text-sm font-medium">
               Beneficiary Name <span className="text-destructive">*</span>
+              {isVerified && <span className="text-xs text-green-600 ml-2">(Verified)</span>}
             </Label>
             <Input
               id="beneficiaryName"
@@ -578,11 +584,16 @@ export function AddBeneficiaryDialog({
               onChange={(e) =>
                 setFormData({ ...formData, beneficiaryName: e.target.value })
               }
-              placeholder={isVerified ? "Auto-filled from verification" : "Enter beneficiary name manually"}
+              placeholder={isVerified ? "Auto-filled from verification (editable)" : "Enter beneficiary name"}
               className={isVerified ? "bg-green-50 border-green-300" : ""}
             />
             {errors.beneficiaryName && (
               <p className="text-red-500 text-xs">{errors.beneficiaryName}</p>
+            )}
+            {!isVerified && (
+              <p className="text-xs text-muted-foreground">
+                Verify account to auto-fill, or enter manually
+              </p>
             )}
           </div>
 
