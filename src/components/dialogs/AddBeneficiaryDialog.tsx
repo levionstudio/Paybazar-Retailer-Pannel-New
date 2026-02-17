@@ -53,14 +53,13 @@ export function AddBeneficiaryDialog({
 }: AddBeneficiaryDialogProps) {
   const { toast } = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
-const [formData, setFormData] = useState({
-  bank: "",
-  ifsc: "",
-  accountNumber: "",
-  beneficiaryName: "",
-  branchName: "", // ✅ NEW
-});
-
+  const [formData, setFormData] = useState({
+    bank: "",
+    ifsc: "",
+    accountNumber: "",
+    beneficiaryName: "",
+    branchName: "",
+  });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -116,7 +115,6 @@ const [formData, setFormData] = useState({
         accountNumber: "",
         beneficiaryName: "",
         branchName: "",
-
       });
       setErrors({});
       setBankSearchTerm("");
@@ -169,20 +167,18 @@ const [formData, setFormData] = useState({
         throw new Error("Retailer ID not found. Please login again.");
       }
 
-      // ✅ CORRECTED: Matches VerifyBeneficiaryRequestModel
-    const payload = {
-  mobile_number: mobileNumber,
-  bank_name: formData.bank,
-  beneficiary_name: formData.beneficiaryName,
-  account_number: formData.accountNumber,
-  ifsc_code: formData.ifsc,
-};
+      const payload = {
+        mobile_number: mobileNumber,
+        bank_name: formData.bank,
+        beneficiary_name: formData.beneficiaryName,
+        account_number: formData.accountNumber,
+        ifsc_code: formData.ifsc,
+      };
 
       console.log("=== Verify Beneficiary Payload ===");
       console.log("Payload:", payload);
       console.log("==================================");
 
-      // ✅ CORRECTED: Route is /verify/beneficiaries (plural)
       const response = await axios.post(
         `${import.meta.env.VITE_API_BASE_URL}/bene/verify/beneficiaries`,
         payload,
@@ -199,27 +195,23 @@ const [formData, setFormData] = useState({
       console.log("===================================");
 
       if (response.data?.status === "success") {
-        // ✅ CORRECTED: Response structure is { status, message, data: VerifyBeneficiaryDetailsModel }
-const verifyResponse = response.data?.data?.response;
-const verificationData = verifyResponse?.data;
+        const verifyResponse = response.data?.data?.response;
+        const verificationData = verifyResponse?.data;
 
-if (verificationData) {
-  setFormData(prev => ({
-    ...prev,
-    beneficiaryName: verificationData.c_name ?? "",
-    bank: verificationData.bank_name ?? prev.bank,
-    branchName: verificationData.branch_name ?? "", // ✅ HERE
-  }));
+        if (verificationData) {
+          setFormData(prev => ({
+            ...prev,
+            beneficiaryName: verificationData.c_name ?? "",
+            bank: verificationData.bank_name ?? prev.bank,
+            branchName: verificationData.branch_name ?? "",
+          }));
 
-  setIsVerified(true);
+          setIsVerified(true);
 
-  toast({
-    title: "Success",
-    description: `Account verified: ${verificationData.c_name}`,
-  });
-
-
-
+          toast({
+            title: "Success",
+            description: `Account verified: ${verificationData.c_name}`,
+          });
         } else {
           setIsVerified(true);
           toast({
@@ -266,15 +258,11 @@ if (verificationData) {
       newErrors.accountNumber = "Account number must be at least 9 digits";
     }
 
-    if (!isVerified) {
-      newErrors.accountNumber = "Please verify account before submitting";
-    }
+    // ✅ Verification is now OPTIONAL - removed mandatory check
 
     if (!formData.beneficiaryName) {
       newErrors.beneficiaryName = "Beneficiary name is required";
     }
-
-
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -304,7 +292,6 @@ if (verificationData) {
         beneficiary_name: formData.beneficiaryName,
         account_number: formData.accountNumber,
         ifsc_code: formData.ifsc,
-        beneficiary_phone: formData.beneficiaryPhone,
       };
 
       console.log("=== Add Beneficiary Payload ===");
@@ -579,7 +566,7 @@ if (verificationData) {
             )}
           </div>
 
-          {/* Beneficiary Name - Auto-filled from verification */}
+          {/* Beneficiary Name - Auto-filled from verification OR manual entry */}
           <div className="space-y-2">
             <Label htmlFor="beneficiaryName" className="text-sm font-medium">
               Beneficiary Name <span className="text-destructive">*</span>
@@ -591,7 +578,7 @@ if (verificationData) {
               onChange={(e) =>
                 setFormData({ ...formData, beneficiaryName: e.target.value })
               }
-              placeholder="Will auto-fill after verification"
+              placeholder={isVerified ? "Auto-filled from verification" : "Enter beneficiary name manually"}
               className={isVerified ? "bg-green-50 border-green-300" : ""}
             />
             {errors.beneficiaryName && (
@@ -599,22 +586,23 @@ if (verificationData) {
             )}
           </div>
 
-          {/* Beneficiary Branch Name - Auto-filled from verification */}
-      {/* Branch Name - Auto-filled */}
-<div className="space-y-2">
-  <Label htmlFor="branchName" className="text-sm font-medium">
-    Branch Name
-  </Label>
-  <Input
-    id="branchName"
-    type="text"
-    value={formData.branchName}
-    readOnly
-    className="bg-green-50 border-green-300"
-    placeholder="Will auto-fill after verification"
-  />
-</div>
-
+          {/* Branch Name - Auto-filled from verification (optional field) */}
+          <div className="space-y-2">
+            <Label htmlFor="branchName" className="text-sm font-medium">
+              Branch Name {isVerified && <span className="text-xs text-muted-foreground">(Auto-filled)</span>}
+            </Label>
+            <Input
+              id="branchName"
+              type="text"
+              value={formData.branchName}
+              onChange={(e) =>
+                setFormData({ ...formData, branchName: e.target.value })
+              }
+              className={isVerified ? "bg-green-50 border-green-300" : ""}
+              placeholder={isVerified ? "Auto-filled from verification" : "Enter branch name (optional)"}
+              readOnly={isVerified}
+            />
+          </div>
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3 pt-4">
@@ -630,7 +618,7 @@ if (verificationData) {
             <Button
               type="submit"
               className="flex-1 paybazaar-gradient text-white"
-              disabled={isSubmitting || loading || !isVerified}
+              disabled={isSubmitting || loading}
             >
               {isSubmitting ? (
                 <>
